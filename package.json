@@ -1,0 +1,13 @@
+{
+  "name": "openclaw-skill-manager",
+  "version": "1.0.0",
+  "description": "Visual skill download and management tool for OpenClaw",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenClaw Skill Manager</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">OpenClaw Toolkit</p>
+          <h1>Skill 下载与管理控制台</h1>
+          <p class="lead">可视化安装、更新、启停和卸载 OpenClaw Skills，支持 Git 仓库一键接入。</p>
+        </div>
+        <button id="refreshBtn" class="btn btn-outline">刷新数据</button>
+      </header>
+
+      <section class="panel grid-2">
+        <div>
+          <h2>手动安装</h2>
+          <form id="installForm" class="install-form">
+            <label>
+              Skill 名称
+              <input id="nameInput" name="name" placeholder="比如: claw-toolkit" />
+            </label>
+            <label>
+              Git 地址
+              <input id="repoUrlInput" name="repoUrl" placeholder="https://github.com/org/skill.git" required />
+            </label>
+            <label>
+              分支
+              <input id="branchInput" name="branch" placeholder="main" value="main" />
+            </label>
+            <button class="btn" type="submit">安装 Skill</button>
+          </form>
+        </div>
+
+        <div>
+          <h2>推荐 Skill</h2>
+          <div id="catalogList" class="catalog-list"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="row-head">
+          <h2>已安装 Skills</h2>
+          <span id="skillCount" class="muted">0 个</span>
+        </div>
+        <div id="installedGrid" class="installed-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="row-head">
+          <h2>操作日志</h2>
+          <button id="clearLogBtn" class="btn btn-ghost">清空</button>
+        </div>
+        <pre id="logBox" class="log-box"></pre>
+      </section>
+    </main>
+
+    <template id="skillCardTpl">
+      <article class="skill-card">
+        <div class="card-head">
+          <h3 data-field="title"></h3>
+          <span class="tag" data-field="enabledTag"></span>
+        </div>
+        <p data-field="description" class="desc"></p>
+        <p class="meta">
+          <span data-field="name"></span>
+          <span data-field="version"></span>
+        </p>
+        <p class="meta"><span data-field="repoUrl"></span></p>
+        <div class="actions">
+          <button data-action="toggle" class="btn btn-outline"></button>
+          <button data-action="update" class="btn btn-outline">更新</button>
+          <button data-action="delete" class="btn btn-danger">卸载</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

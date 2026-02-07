@@ -1,0 +1,16 @@
+[
+  {
+    "name": "claw-voice-pack",
+    "title": "Voice Pack",
+    "description": "Adds multilingual voice interactions.",
+    "repoUrl": "https://github.com/example/openclaw-skill-voice.git",
+    "branch": "main"
+  },
+  {
+    "name": "claw-memory-agent",
+    "title": "Memory Agent",
+    "description": "Long-term memory skill for personalized responses.",
+    "repoUrl": "https://github.com/example/openclaw-skill-memory.git",
+    "branch": "main"
+  }
+]
