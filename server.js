@@ -2,14 +2,13 @@ const http = require("http");
 const fs = require("fs/promises");
 const fsSync = require("fs");
 const path = require("path");
+const os = require("os");
+const https = require("https");
 const { spawn } = require("child_process");
 
 const PORT = process.env.PORT || 4173;
 const ROOT_DIR = process.cwd();
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
-const SKILLS_DIR = path.join(ROOT_DIR, "openclaw-skills");
-const STATE_FILE = path.join(ROOT_DIR, "skill-manager-state.json");
-const CATALOG_FILE = path.join(ROOT_DIR, "catalog.json");
 
 const MIME_MAP = {
   ".html": "text/html; charset=utf-8",
@@ -26,64 +25,11 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-async function ensureEnvironment() {
-  await fs.mkdir(SKILLS_DIR, { recursive: true });
-  if (!fsSync.existsSync(STATE_FILE)) {
-    await fs.writeFile(STATE_FILE, JSON.stringify({ skills: {} }, null, 2), "utf-8");
-  }
-  if (!fsSync.existsSync(CATALOG_FILE)) {
-    await fs.writeFile(
-      CATALOG_FILE,
-      JSON.stringify(
-        [
-          {
-            name: "claw-voice-pack",
-            title: "Voice Pack",
-            description: "Adds multilingual voice interactions.",
-            repoUrl: "https://github.com/example/openclaw-skill-voice.git"
-          },
-          {
-            name: "claw-memory-agent",
-            title: "Memory Agent",
-            description: "Long-term memory skill for personalized responses.",
-            repoUrl: "https://github.com/example/openclaw-skill-memory.git"
-          }
-        ],
-        null,
-        2
-      ),
-      "utf-8"
-    );
-  }
-}
-
-async function readState() {
-  const raw = await fs.readFile(STATE_FILE, "utf-8");
-  const parsed = JSON.parse(raw);
-  if (!parsed.skills || typeof parsed.skills !== "object") {
-    parsed.skills = {};
-  }
-  return parsed;
-}
-
-async function writeState(state) {
-  await fs.writeFile(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
-}
-
-function safeSkillName(name) {
-  return String(name || "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9-_]/g, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd || ROOT_DIR,
-      shell: process.platform === "win32",
+      shell: false,
       env: process.env
     });
 
@@ -98,28 +44,461 @@ function runCommand(command, args, options = {}) {
       stderr += String(chunk);
     });
 
-    child.on("error", (error) => {
-      reject(error);
-    });
-
+    child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) {
         resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
-      } else {
-        const message = stderr.trim() || stdout.trim() || `Command failed with code ${code}`;
-        reject(new Error(message));
+        return;
       }
+      reject(new Error(stderr.trim() || stdout.trim() || `Command failed with code ${code}`));
     });
   });
 }
 
-async function readCatalog() {
-  const raw = await fs.readFile(CATALOG_FILE, "utf-8");
-  const parsed = JSON.parse(raw);
-  if (!Array.isArray(parsed)) {
-    return [];
+function runPowerShellScript(script, options = {}) {
+  const shellPath =
+    process.env.OPENCLAW_PWSH ||
+    "D:\\Program Files\\PowerShell\\7\\pwsh.exe";
+  return runCommand(
+    shellPath,
+    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+    options
+  );
+}
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    https
+      .get(url, (res) => {
+        let body = "";
+        res.on("data", (chunk) => {
+          body += String(chunk);
+        });
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      })
+      .on("error", reject);
+  });
+}
+
+function normalizePath(input) {
+  const value = String(input || "").trim();
+  if (!value) {
+    return "";
   }
-  return parsed;
+  return path.resolve(value);
+}
+
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function statSafe(targetPath) {
+  try {
+    return await fs.stat(targetPath);
+  } catch {
+    return null;
+  }
+}
+
+function uniquePaths(paths) {
+  return [...new Set(paths.filter(Boolean).map((item) => normalizePath(item)).filter(Boolean))];
+}
+
+function getDefaultOpenClawRoot() {
+  const homeDir = os.homedir();
+  return path.join(homeDir, ".openclaw");
+}
+
+async function detectConfigCandidates() {
+  const defaultRoot = getDefaultOpenClawRoot();
+  const explicitCandidates = uniquePaths([defaultRoot, path.join(defaultRoot, "openclaw.json")]);
+  const existing = [];
+  for (const candidate of explicitCandidates) {
+    const stat = await statSafe(candidate);
+    if (!stat) {
+      continue;
+    }
+
+    if (stat.isDirectory()) {
+      const directoryConfig = path.join(candidate, "openclaw.json");
+      if (await pathExists(directoryConfig)) {
+        existing.push(candidate);
+      }
+      continue;
+    }
+
+    const baseName = path.basename(candidate).toLowerCase();
+    if (baseName === "openclaw.json" || baseName === ".openclaw") {
+      existing.push(candidate);
+    }
+  }
+
+  return existing;
+}
+
+async function detectOpenClawRoots() {
+  const defaultRoot = getDefaultOpenClawRoot();
+  const stat = await statSafe(defaultRoot);
+  if (stat && stat.isDirectory()) {
+    return [defaultRoot];
+  }
+  return [];
+}
+
+async function readMaybeJson(filePath) {
+  const raw = await fs.readFile(filePath, "utf-8");
+  try {
+    return {
+      raw,
+      parsed: JSON.parse(raw),
+      format: "json"
+    };
+  } catch {
+    return {
+      raw,
+      parsed: null,
+      format: "text"
+    };
+  }
+}
+
+async function resolveWorkspacePaths({ rootPath, configPath }) {
+  const normalizedRoot = normalizePath(rootPath);
+  const normalizedConfig = normalizePath(configPath);
+
+  if (normalizedConfig) {
+    const configStat = await statSafe(normalizedConfig);
+    if (configStat && configStat.isDirectory()) {
+      const directoryConfig = path.join(normalizedConfig, "openclaw.json");
+      if (await pathExists(directoryConfig)) {
+        return {
+          rootPath: normalizedRoot || normalizedConfig,
+          configPath: directoryConfig,
+          configDirectory: normalizedConfig
+        };
+      }
+    }
+
+    return {
+      rootPath: normalizedRoot || path.dirname(normalizedConfig),
+      configPath: normalizedConfig,
+      configDirectory: path.dirname(normalizedConfig)
+    };
+  }
+
+  if (normalizedRoot) {
+    const candidates = [
+      path.join(normalizedRoot, "openclaw.json"),
+      path.join(normalizedRoot, ".openclaw")
+    ];
+
+    for (const candidate of candidates) {
+      if (await pathExists(candidate)) {
+        return {
+          rootPath: normalizedRoot,
+          configPath: candidate,
+          configDirectory: path.dirname(candidate)
+        };
+      }
+    }
+
+    return {
+      rootPath: normalizedRoot,
+      configPath: path.join(normalizedRoot, "openclaw.json"),
+      configDirectory: normalizedRoot
+    };
+  }
+
+  throw new Error("未提供配置文件路径");
+}
+
+async function readWorkspaceSummary(rootPath, parsedConfig) {
+  const workspacePath =
+    parsedConfig?.agents?.defaults?.workspace || path.join(rootPath, "workspace");
+  const workspaceStat = await statSafe(workspacePath);
+  const exists = Boolean(workspaceStat && workspaceStat.isDirectory());
+
+  const keyFiles = [
+    "AGENTS.md",
+    "USER.md",
+    "TOOLS.md",
+    "SOUL.md",
+    "MEMORY.md",
+    "IDENTITY.md",
+    "DREAMS.md",
+    "package.json",
+    "scheduled_tasks.json",
+    "quick_queries.json"
+  ];
+
+  const files = [];
+  if (exists) {
+    for (const name of keyFiles) {
+      const filePath = path.join(workspacePath, name);
+      const stat = await statSafe(filePath);
+      if (!stat || !stat.isFile()) {
+        continue;
+      }
+      files.push({
+        name,
+        path: filePath,
+        size: stat.size
+      });
+    }
+  }
+
+  const skillsPath = path.join(workspacePath, "skills");
+  const skills = [];
+  const skillsStat = await statSafe(skillsPath);
+  if (skillsStat && skillsStat.isDirectory()) {
+    const entries = await fs.readdir(skillsPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const skillDir = path.join(skillsPath, entry.name);
+      const metaFile = path.join(skillDir, "_meta.json");
+      let title = entry.name;
+      let description = "";
+
+      if (await pathExists(metaFile)) {
+        try {
+          const parsed = JSON.parse(await fs.readFile(metaFile, "utf-8"));
+          title = parsed.title || parsed.name || entry.name;
+          description = parsed.description || "";
+        } catch {
+          // ignore malformed meta
+        }
+      }
+
+      skills.push({
+        name: entry.name,
+        title,
+        description,
+        path: skillDir
+      });
+    }
+  }
+
+  skills.sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    path: workspacePath,
+    exists,
+    keyFiles: files,
+    skills
+  };
+}
+
+async function getInstalledOpenClawVersion() {
+  const localVersion = await detectVersionInfo(getDefaultOpenClawRoot());
+  if (localVersion.value !== "unknown") {
+    return {
+      value: localVersion.value,
+      source: localVersion.source || "openclaw.json"
+    };
+  }
+
+  try {
+    const result = await runPowerShellScript("openclaw --version");
+    const text = result.stdout || result.stderr;
+    const match = text.match(/OpenClaw\s+([0-9][0-9A-Za-z._-]*)/i);
+    return {
+      value: match ? match[1] : text || "unknown",
+      source: "openclaw --version"
+    };
+  } catch {
+    try {
+      const result = await runPowerShellScript("npm list -g openclaw --depth=0");
+      const match = result.stdout.match(/openclaw@([0-9][0-9A-Za-z._-]*)/i);
+      return {
+        value: match ? match[1] : "unknown",
+        source: "npm list -g openclaw --depth=0"
+      };
+    } catch {
+      return {
+        value: "unknown",
+        source: null
+      };
+    }
+  }
+}
+
+async function getLatestOpenClawVersion() {
+  const payload = await fetchJson("https://registry.npmjs.org/openclaw/latest");
+  return String(payload.version || "").trim();
+}
+
+async function getUpdateStatus() {
+  const installed = await getInstalledOpenClawVersion();
+  let latest = "unknown";
+  let canUpdate = false;
+  let error = null;
+
+  try {
+    latest = await getLatestOpenClawVersion();
+    canUpdate = installed.value !== "unknown" && latest !== "unknown" && installed.value !== latest;
+  } catch (updateError) {
+    error = updateError.message || "检查最新版本失败";
+  }
+
+  return {
+    installed,
+    latest,
+    canUpdate,
+    error
+  };
+}
+
+async function runOpenClawUpdate() {
+  const before = await getInstalledOpenClawVersion();
+  const result = await runPowerShellScript("npm i -g openclaw@latest");
+  const after = await getInstalledOpenClawVersion();
+  return {
+    before,
+    after,
+    output: result.stdout || result.stderr || "Updated"
+  };
+}
+
+function extractVersionFromText(text) {
+  const match = String(text || "").match(/version\s*[:=]\s*["']?([0-9a-zA-Z._-]+)["']?/i);
+  return match ? match[1] : null;
+}
+
+async function detectVersionInfo(rootPath) {
+  const root = normalizePath(rootPath);
+  if (!root) {
+    return { value: "unknown", source: null, detail: "No root selected" };
+  }
+
+  const candidates = [
+    {
+      file: path.join(root, "openclaw.json"),
+      reader: async (file) => {
+        const parsed = JSON.parse(await fs.readFile(file, "utf-8"));
+        return parsed.meta?.lastTouchedVersion || parsed.wizard?.lastRunVersion || null;
+      }
+    },
+    {
+      file: path.join(root, "package.json"),
+      reader: async (file) => {
+        const parsed = JSON.parse(await fs.readFile(file, "utf-8"));
+        return parsed.version || null;
+      }
+    },
+    {
+      file: path.join(root, "pyproject.toml"),
+      reader: async (file) => extractVersionFromText(await fs.readFile(file, "utf-8"))
+    },
+    {
+      file: path.join(root, "VERSION"),
+      reader: async (file) => String(await fs.readFile(file, "utf-8")).trim()
+    },
+    {
+      file: path.join(root, "version.txt"),
+      reader: async (file) => String(await fs.readFile(file, "utf-8")).trim()
+    }
+  ];
+
+  for (const candidate of candidates) {
+    if (!(await pathExists(candidate.file))) {
+      continue;
+    }
+    try {
+      const value = await candidate.reader(candidate.file);
+      if (value) {
+        return { value, source: candidate.file, detail: "Detected from local files" };
+      }
+    } catch {
+      // ignore malformed version files
+    }
+  }
+
+  return { value: "unknown", source: null, detail: "No supported version file found" };
+}
+
+async function summarizeRoot(rootPath) {
+  const root = normalizePath(rootPath);
+  if (!root) {
+    return null;
+  }
+
+  const stat = await statSafe(root);
+  if (!stat || !stat.isDirectory()) {
+    throw new Error("OpenClaw 根目录不存在");
+  }
+
+  const openclawJsonPath = path.join(root, "openclaw.json");
+  const configPath = path.join(root, ".openclaw");
+  const version = await detectVersionInfo(root);
+  const hasOpenclawJson = await pathExists(openclawJsonPath);
+  const hasDotOpenclaw = await pathExists(configPath);
+
+  return {
+    rootPath: root,
+    hasConfig: hasOpenclawJson || hasDotOpenclaw,
+    configPath: hasOpenclawJson ? openclawJsonPath : hasDotOpenclaw ? configPath : null,
+    version
+  };
+}
+
+async function loadWorkspace({ rootPath, configPath }) {
+  const resolved = await resolveWorkspacePaths({ rootPath, configPath });
+  const finalConfigPath = resolved.configPath;
+  const finalRootPath = resolved.rootPath;
+
+  const fileExists = await pathExists(finalConfigPath);
+  let config = {
+    path: finalConfigPath,
+    directory: resolved.configDirectory,
+    exists: fileExists,
+    format: "text",
+    raw: "",
+    parsed: null
+  };
+
+  if (fileExists) {
+    const loaded = await readMaybeJson(finalConfigPath);
+    config = {
+      path: finalConfigPath,
+      directory: resolved.configDirectory,
+      exists: true,
+      format: loaded.format,
+      raw: loaded.raw,
+      parsed: loaded.parsed
+    };
+  }
+
+  const version = await detectVersionInfo(finalRootPath);
+  const workspace = await readWorkspaceSummary(finalRootPath, config.parsed);
+  return {
+    rootPath: finalRootPath,
+    version,
+    config,
+    workspace
+  };
+}
+
+async function saveConfig({ configPath, content }) {
+  const resolved = await resolveWorkspacePaths({ configPath });
+  const targetPath = resolved.configPath;
+
+  const parentDir = path.dirname(targetPath);
+  await fs.mkdir(parentDir, { recursive: true });
+  await fs.writeFile(targetPath, String(content ?? ""), "utf-8");
+  return loadWorkspace({ configPath: targetPath });
 }
 
 async function readJsonBody(req) {
@@ -127,7 +506,7 @@ async function readJsonBody(req) {
     let body = "";
     req.on("data", (chunk) => {
       body += String(chunk);
-      if (body.length > 1_000_000) {
+      if (body.length > 2_000_000) {
         reject(new Error("Request body too large"));
       }
     });
@@ -138,7 +517,7 @@ async function readJsonBody(req) {
       }
       try {
         resolve(JSON.parse(body));
-      } catch (error) {
+      } catch {
         reject(new Error("Invalid JSON body"));
       }
     });
@@ -146,148 +525,52 @@ async function readJsonBody(req) {
   });
 }
 
-async function listInstalledSkills() {
-  const entries = await fs.readdir(SKILLS_DIR, { withFileTypes: true });
-  const state = await readState();
-  const result = [];
+async function handleApi(req, res, pathname) {
+  if (req.method === "GET" && pathname === "/api/health") {
+    return sendJson(res, 200, { ok: true, service: "openclaw-local-manager" });
+  }
 
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
+  if (req.method === "GET" && pathname === "/api/discovery") {
+    const [configCandidates, rootCandidates] = await Promise.all([
+      detectConfigCandidates(),
+      detectOpenClawRoots()
+    ]);
 
-    const name = entry.name;
-    const skillDir = path.join(SKILLS_DIR, name);
-    const configPath = path.join(skillDir, "skill.json");
-    const gitPath = path.join(skillDir, ".git");
-    const meta = {
-      name,
-      title: name,
-      description: "",
-      version: "unknown"
-    };
-
-    if (fsSync.existsSync(configPath)) {
+    const roots = [];
+    for (const rootPath of rootCandidates) {
       try {
-        const raw = await fs.readFile(configPath, "utf-8");
-        const parsed = JSON.parse(raw);
-        meta.title = parsed.title || parsed.name || name;
-        meta.description = parsed.description || "";
-        meta.version = parsed.version || "unknown";
+        roots.push(await summarizeRoot(rootPath));
       } catch {
-        // ignore malformed config
+        // ignore invalid root
       }
     }
 
-    const tracked = state.skills[name] || {};
-    result.push({
-      name,
-      title: meta.title,
-      description: meta.description,
-      version: meta.version,
-      enabled: tracked.enabled !== false,
-      repoUrl: tracked.repoUrl || "",
-      branch: tracked.branch || "main",
-      installedAt: tracked.installedAt || null,
-      hasGit: fsSync.existsSync(gitPath)
-    });
-  }
-
-  result.sort((a, b) => a.name.localeCompare(b.name));
-  return result;
-}
-
-async function handleApi(req, res, pathname) {
-  if (req.method === "GET" && pathname === "/api/health") {
-    return sendJson(res, 200, { ok: true, service: "openclaw-skill-manager" });
-  }
-
-  if (req.method === "GET" && pathname === "/api/catalog") {
-    const catalog = await readCatalog();
-    return sendJson(res, 200, { items: catalog });
-  }
-
-  if (req.method === "GET" && pathname === "/api/skills") {
-    const skills = await listInstalledSkills();
-    return sendJson(res, 200, { skills });
-  }
-
-  if (req.method === "POST" && pathname === "/api/skills/install") {
-    const payload = await readJsonBody(req);
-    const repoUrl = String(payload.repoUrl || "").trim();
-    const branch = String(payload.branch || "main").trim() || "main";
-    const rawName = payload.name || path.basename(repoUrl).replace(/\.git$/i, "");
-    const name = safeSkillName(rawName);
-
-    if (!repoUrl) {
-      return sendJson(res, 400, { error: "repoUrl is required" });
-    }
-    if (!name) {
-      return sendJson(res, 400, { error: "A valid skill name is required" });
-    }
-
-    const targetDir = path.join(SKILLS_DIR, name);
-    if (fsSync.existsSync(targetDir)) {
-      return sendJson(res, 409, { error: `Skill '${name}' already exists` });
-    }
-
-    await runCommand("git", ["clone", "--depth", "1", "--branch", branch, repoUrl, targetDir]);
-    const state = await readState();
-    state.skills[name] = {
-      enabled: true,
-      repoUrl,
-      branch,
-      installedAt: new Date().toISOString()
-    };
-    await writeState(state);
-
-    return sendJson(res, 201, { ok: true, name, repoUrl, branch });
-  }
-
-  const toggleMatch = pathname.match(/^\/api\/skills\/([^/]+)\/toggle$/);
-  if (req.method === "POST" && toggleMatch) {
-    const name = safeSkillName(toggleMatch[1]);
-    const payload = await readJsonBody(req);
-    const enabled = Boolean(payload.enabled);
-    const state = await readState();
-
-    if (!state.skills[name]) {
-      state.skills[name] = {};
-    }
-    state.skills[name].enabled = enabled;
-    await writeState(state);
-    return sendJson(res, 200, { ok: true, name, enabled });
-  }
-
-  const updateMatch = pathname.match(/^\/api\/skills\/([^/]+)\/update$/);
-  if (req.method === "POST" && updateMatch) {
-    const name = safeSkillName(updateMatch[1]);
-    const dir = path.join(SKILLS_DIR, name);
-    if (!fsSync.existsSync(dir)) {
-      return sendJson(res, 404, { error: "Skill not found" });
-    }
-
-    const output = await runCommand("git", ["-C", dir, "pull", "--ff-only"]);
     return sendJson(res, 200, {
-      ok: true,
-      name,
-      message: output.stdout || output.stderr || "Updated"
+      configCandidates,
+      roots: roots.filter(Boolean)
     });
   }
 
-  const deleteMatch = pathname.match(/^\/api\/skills\/([^/]+)$/);
-  if (req.method === "DELETE" && deleteMatch) {
-    const name = safeSkillName(deleteMatch[1]);
-    const dir = path.join(SKILLS_DIR, name);
-    if (!fsSync.existsSync(dir)) {
-      return sendJson(res, 404, { error: "Skill not found" });
-    }
+  if (req.method === "POST" && pathname === "/api/openclaw/load") {
+    const payload = await readJsonBody(req);
+    const workspace = await loadWorkspace(payload);
+    return sendJson(res, 200, workspace);
+  }
 
-    await fs.rm(dir, { recursive: true, force: true });
-    const state = await readState();
-    delete state.skills[name];
-    await writeState(state);
-    return sendJson(res, 200, { ok: true, name });
+  if (req.method === "POST" && pathname === "/api/openclaw/save") {
+    const payload = await readJsonBody(req);
+    const workspace = await saveConfig(payload);
+    return sendJson(res, 200, { ok: true, workspace });
+  }
+
+  if (req.method === "GET" && pathname === "/api/openclaw/update-status") {
+    const status = await getUpdateStatus();
+    return sendJson(res, 200, status);
+  }
+
+  if (req.method === "POST" && pathname === "/api/openclaw/update") {
+    const result = await runOpenClawUpdate();
+    return sendJson(res, 200, { ok: true, result });
   }
 
   sendJson(res, 404, { error: "API endpoint not found" });
@@ -327,7 +610,7 @@ async function requestHandler(req, res) {
   const pathname = decodeURIComponent(url.pathname);
 
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
@@ -348,10 +631,9 @@ async function requestHandler(req, res) {
 }
 
 async function start() {
-  await ensureEnvironment();
   const server = http.createServer(requestHandler);
   server.listen(PORT, () => {
-    console.log(`OpenClaw skill manager running at http://localhost:${PORT}`);
+    console.log(`OpenClaw local manager running at http://localhost:${PORT}`);
   });
 }
 

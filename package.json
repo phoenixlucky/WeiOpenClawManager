@@ -1,7 +1,7 @@
 {
-  "name": "openclaw-skill-manager",
+  "name": "openclaw-local-manager",
   "version": "1.0.0",
-  "description": "Visual skill download and management tool for OpenClaw",
+  "description": "Local web client for managing OpenClaw version info and .openclaw config",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

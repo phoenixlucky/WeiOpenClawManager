@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenClaw Skill Manager</title>
+    <title>OpenClaw 本地配置客户端</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -12,45 +12,115 @@
     <main class="shell">
       <header class="hero">
         <div>
-          <p class="eyebrow">OpenClaw Toolkit</p>
-          <h1>Skill 下载与管理控制台</h1>
-          <p class="lead">可视化安装、更新、启停和卸载 OpenClaw Skills，支持 Git 仓库一键接入。</p>
+          <p class="eyebrow">OpenClaw Local Client</p>
+          <h1>本地版本与 OpenClaw 配置管理</h1>
+          <p class="lead">扫描本机 OpenClaw 配置目录，读取版本信息，编辑并保存 `openclaw.json`。</p>
         </div>
-        <button id="refreshBtn" class="btn btn-outline">刷新数据</button>
+        <div class="hero-actions">
+          <button id="discoverBtn" class="btn btn-outline">重新扫描</button>
+          <button id="refreshBtn" class="btn btn-outline">重新加载</button>
+        </div>
       </header>
 
-      <section class="panel grid-2">
-        <div>
-          <h2>手动安装</h2>
-          <form id="installForm" class="install-form">
-            <label>
-              Skill 名称
-              <input id="nameInput" name="name" placeholder="比如: claw-toolkit" />
-            </label>
-            <label>
-              Git 地址
-              <input id="repoUrlInput" name="repoUrl" placeholder="https://github.com/org/skill.git" required />
-            </label>
-            <label>
-              分支
-              <input id="branchInput" name="branch" placeholder="main" value="main" />
-            </label>
-            <button class="btn" type="submit">安装 Skill</button>
+      <section class="panel">
+        <div class="config-entry">
+          <div class="config-entry-copy">
+            <h2>配置入口</h2>
+            <p class="meta">默认读取标准 OpenClaw 配置目录，通常是 `C:\Users\Administrator\.openclaw`。</p>
+          </div>
+          <form id="pathForm" class="config-entry-form">
+            <input id="configPathInput" name="configPath" placeholder="输入 OpenClaw 配置目录或 openclaw.json 路径" />
+            <button class="btn" type="submit">加载配置</button>
           </form>
         </div>
-
-        <div>
-          <h2>推荐 Skill</h2>
-          <div id="catalogList" class="catalog-list"></div>
+        <div class="discovery-strip">
+          <div>
+            <p class="mini-label">已发现</p>
+            <p id="discoverySummary" class="path-text small">尚未扫描</p>
+          </div>
+          <div id="configCandidateList" class="compact-list"></div>
         </div>
       </section>
 
       <section class="panel">
         <div class="row-head">
-          <h2>已安装 Skills</h2>
-          <span id="skillCount" class="muted">0 个</span>
+          <h2>当前工作区</h2>
+          <span id="workspaceStatus" class="muted">未加载</span>
         </div>
-        <div id="installedGrid" class="installed-grid"></div>
+        <div class="workspace-grid">
+          <article class="info-card">
+            <h3>版本信息</h3>
+            <p id="versionValue" class="metric">unknown</p>
+            <p id="versionSource" class="meta">未找到版本来源</p>
+          </article>
+          <article class="info-card">
+            <h3>根目录</h3>
+            <p id="rootPathValue" class="path-text">-</p>
+            <p class="meta">用于推断版本与默认配置位置</p>
+          </article>
+          <article class="info-card">
+            <h3>配置目录 / 配置文件</h3>
+            <p id="configPathValue" class="path-text">-</p>
+            <p id="configMeta" class="meta">尚未加载配置</p>
+          </article>
+        </div>
+        <div class="update-bar">
+          <div>
+            <p class="mini-label">OpenClaw 更新</p>
+            <p id="updateStatusText" class="meta">尚未检查版本</p>
+          </div>
+          <div class="actions">
+            <button id="checkUpdateBtn" class="btn btn-outline">检查新版</button>
+            <button id="runUpdateBtn" class="btn">执行更新</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel grid-2">
+        <div class="stack">
+          <div class="row-head">
+            <h2>工作区文件</h2>
+            <span id="workspaceFileCount" class="muted">0 个</span>
+          </div>
+          <div id="workspaceFileList" class="parsed-view"></div>
+        </div>
+
+        <div class="stack">
+          <div class="row-head">
+            <h2>工作区技能</h2>
+            <span id="workspaceSkillCount" class="muted">0 个</span>
+          </div>
+          <div id="workspaceSkillList" class="parsed-view"></div>
+        </div>
+      </section>
+
+      <section class="panel grid-2">
+        <div class="stack">
+          <div class="row-head">
+            <h2>结构化预览</h2>
+            <span id="parsedHint" class="muted">仅 JSON 自动解析</span>
+          </div>
+          <div id="parsedView" class="parsed-view"></div>
+        </div>
+
+        <div class="stack">
+          <div class="row-head">
+            <h2>中文解析说明</h2>
+            <span id="explanationHint" class="muted">按当前配置自动生成</span>
+          </div>
+          <div id="explanationView" class="parsed-view"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="row-head">
+          <h2>原始配置内容</h2>
+          <div class="actions">
+            <button id="saveBtn" class="btn">保存配置</button>
+            <button id="formatBtn" class="btn btn-ghost">格式化 JSON</button>
+          </div>
+        </div>
+        <textarea id="configEditor" class="editor" spellcheck="false" placeholder="这里会显示 OpenClaw 配置目录中的 openclaw.json 内容"></textarea>
       </section>
 
       <section class="panel">
@@ -62,22 +132,39 @@
       </section>
     </main>
 
-    <template id="skillCardTpl">
-      <article class="skill-card">
+    <div id="updateModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="updateModalTitle">
+        <div class="row-head">
+          <h2 id="updateModalTitle">OpenClaw 更新进度</h2>
+          <button id="closeUpdateModalBtn" class="btn btn-ghost" type="button">关闭</button>
+        </div>
+        <p id="updateModalStatus" class="meta">等待开始</p>
+        <div class="progress-track">
+          <div id="updateProgressBar" class="progress-bar"></div>
+        </div>
+        <pre id="updateModalLog" class="modal-log"></pre>
+      </div>
+    </div>
+
+    <template id="infoCardTpl">
+      <article class="parsed-item">
+        <h3 data-field="title"></h3>
+        <p data-field="path" class="path-text small"></p>
+        <p data-field="desc" class="meta"></p>
+      </article>
+    </template>
+
+    <template id="rootCardTpl">
+      <article class="root-card">
         <div class="card-head">
           <h3 data-field="title"></h3>
-          <span class="tag" data-field="enabledTag"></span>
+          <span class="tag" data-field="configTag"></span>
         </div>
-        <p data-field="description" class="desc"></p>
-        <p class="meta">
-          <span data-field="name"></span>
-          <span data-field="version"></span>
-        </p>
-        <p class="meta"><span data-field="repoUrl"></span></p>
+        <p data-field="rootPath" class="path-text small"></p>
+        <p data-field="version" class="meta"></p>
         <div class="actions">
-          <button data-action="toggle" class="btn btn-outline"></button>
-          <button data-action="update" class="btn btn-outline">更新</button>
-          <button data-action="delete" class="btn btn-danger">卸载</button>
+          <button data-action="load" class="btn">加载</button>
         </div>
       </article>
     </template>
