@@ -6,9 +6,21 @@ const os = require("os");
 const https = require("https");
 const { spawn } = require("child_process");
 
+let sea = null;
+try {
+  sea = require("node:sea");
+} catch {
+  sea = null;
+}
+
 const PORT = process.env.PORT || 4173;
-const ROOT_DIR = process.cwd();
-const PUBLIC_DIR = path.join(ROOT_DIR, "public");
+const APP_DIR = __dirname;
+const WORK_DIR = process.cwd();
+const PUBLIC_DIR = path.join(APP_DIR, "public");
+const SHOULD_AUTO_OPEN_BROWSER =
+  process.env.OPENCLAW_AUTO_OPEN === "1" ||
+  (!/^(node|iojs)(\.exe)?$/i.test(path.basename(process.execPath)) &&
+    process.env.OPENCLAW_AUTO_OPEN !== "0");
 
 const MIME_MAP = {
   ".html": "text/html; charset=utf-8",
@@ -25,10 +37,28 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function getEmbeddedAsset(assetPath) {
+  if (!sea || typeof sea.isSea !== "function" || !sea.isSea()) {
+    return null;
+  }
+
+  const normalized = String(assetPath || "").replace(/^\/+/, "");
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const asset = sea.getAsset(`public/${normalized}`);
+    return Buffer.from(asset);
+  } catch {
+    return null;
+  }
+}
+
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: options.cwd || ROOT_DIR,
+      cwd: options.cwd || WORK_DIR,
       shell: false,
       env: process.env
     });
@@ -55,15 +85,96 @@ function runCommand(command, args, options = {}) {
   });
 }
 
-function runPowerShellScript(script, options = {}) {
-  const shellPath =
-    process.env.OPENCLAW_PWSH ||
-    "D:\\Program Files\\PowerShell\\7\\pwsh.exe";
+function collectPowerShellCandidates() {
+  const candidates = [];
+  const addCandidate = (value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized || candidates.includes(normalized)) {
+      return;
+    }
+    candidates.push(normalized);
+  };
+
+  addCandidate(process.env.OPENCLAW_PWSH);
+  addCandidate("pwsh.exe");
+  addCandidate("C:\\Program Files\\PowerShell\\7\\pwsh.exe");
+  addCandidate("D:\\Program Files\\PowerShell\\7\\pwsh.exe");
+  addCandidate("powershell.exe");
+  addCandidate("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+
+  return candidates;
+}
+
+function findOpenClawCmdShim() {
+  const npmBinDir = path.join(process.env.APPDATA || "", "npm");
+  if (!npmBinDir || !fsSync.existsSync(npmBinDir)) {
+    return null;
+  }
+
+  const candidates = fsSync
+    .readdirSync(npmBinDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter((name) => /^\.?openclaw(?:\.cmd)?(?:-.+)?$/i.test(name) || /^\.?openclaw\.cmd(?:-.+)?$/i.test(name))
+    .filter((name) => /\.cmd(?:-.+)?$/i.test(name))
+    .map((name) => path.join(npmBinDir, name));
+
+  return candidates[0] || null;
+}
+
+async function resolvePowerShellPath() {
+  let lastError = null;
+
+  for (const shellPath of collectPowerShellCandidates()) {
+    try {
+      await runCommand(shellPath, [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$PSVersionTable.PSVersion.ToString()"
+      ]);
+      return shellPath;
+    } catch (error) {
+      if (error && typeof error === "object" && error.code === "ENOENT") {
+        lastError = error;
+        continue;
+      }
+      return shellPath;
+    }
+  }
+
+  throw lastError || new Error("No PowerShell executable was found.");
+}
+
+async function runPowerShellScript(script, options = {}) {
+  const shellPath = await resolvePowerShellPath();
   return runCommand(
     shellPath,
     ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
     options
   );
+}
+
+function openBrowser(url) {
+  let command = null;
+  let args = [];
+
+  if (process.platform === "win32") {
+    command = "cmd.exe";
+    args = ["/c", "start", "", url];
+  } else if (process.platform === "darwin") {
+    command = "open";
+    args = [url];
+  } else {
+    command = "xdg-open";
+    args = [url];
+  }
+
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: "ignore"
+  });
+  child.unref();
 }
 
 function fetchJson(url) {
@@ -301,17 +412,39 @@ async function readWorkspaceSummary(rootPath, parsedConfig) {
   };
 }
 
-async function getInstalledOpenClawVersion() {
-  const localVersion = await detectVersionInfo(getDefaultOpenClawRoot());
+async function getLocalOpenClawVersion(rootPath = getDefaultOpenClawRoot()) {
+  const localVersion = await detectVersionInfo(rootPath);
   if (localVersion.value !== "unknown") {
     return {
       value: localVersion.value,
-      source: localVersion.source || "openclaw.json"
+      source: localVersion.source || "openclaw.json",
+      detail: localVersion.detail || null
     };
   }
 
+  return {
+    value: "unknown",
+    source: null,
+    detail: localVersion.detail || "No supported version file found"
+  };
+}
+
+async function getInstalledOpenClawVersion() {
   try {
-    const result = await runPowerShellScript("openclaw --version");
+    const shimPath = findOpenClawCmdShim();
+    if (shimPath) {
+      const result = await runCommand("cmd.exe", ["/c", shimPath, "--version"]);
+      const text = result.stdout || result.stderr;
+      const match = text.match(/OpenClaw\s+([0-9][0-9A-Za-z._-]*)/i);
+      if (match || text) {
+        return {
+          value: match ? match[1] : text || "unknown",
+          source: shimPath
+        };
+      }
+    }
+
+    const result = await runPowerShellScript("& openclaw --version");
     const text = result.stdout || result.stderr;
     const match = text.match(/OpenClaw\s+([0-9][0-9A-Za-z._-]*)/i);
     return {
@@ -320,11 +453,11 @@ async function getInstalledOpenClawVersion() {
     };
   } catch {
     try {
-      const result = await runPowerShellScript("npm list -g openclaw --depth=0");
+      const result = await runCommand("cmd.exe", ["/c", "npm.cmd", "list", "-g", "openclaw", "--depth=0"]);
       const match = result.stdout.match(/openclaw@([0-9][0-9A-Za-z._-]*)/i);
       return {
         value: match ? match[1] : "unknown",
-        source: "npm list -g openclaw --depth=0"
+        source: "npm.cmd list -g openclaw --depth=0"
       };
     } catch {
       return {
@@ -341,20 +474,25 @@ async function getLatestOpenClawVersion() {
 }
 
 async function getUpdateStatus() {
-  const installed = await getInstalledOpenClawVersion();
+  const global = await getInstalledOpenClawVersion();
+  const local = await getLocalOpenClawVersion();
   let latest = "unknown";
   let canUpdate = false;
   let error = null;
 
   try {
     latest = await getLatestOpenClawVersion();
-    canUpdate = installed.value !== "unknown" && latest !== "unknown" && installed.value !== latest;
+    canUpdate = global.value !== "unknown" && latest !== "unknown" && global.value !== latest;
   } catch (updateError) {
     error = updateError.message || "检查最新版本失败";
   }
 
   return {
-    installed,
+    installed: global,
+    versions: {
+      global,
+      local
+    },
     latest,
     canUpdate,
     error
@@ -362,9 +500,15 @@ async function getUpdateStatus() {
 }
 
 async function runOpenClawUpdate() {
-  const before = await getInstalledOpenClawVersion();
+  const before = {
+    global: await getInstalledOpenClawVersion(),
+    local: await getLocalOpenClawVersion()
+  };
   const result = await runPowerShellScript("npm i -g openclaw@latest");
-  const after = await getInstalledOpenClawVersion();
+  const after = {
+    global: await getInstalledOpenClawVersion(),
+    local: await getLocalOpenClawVersion()
+  };
   return {
     before,
     after,
@@ -481,11 +625,15 @@ async function loadWorkspace({ rootPath, configPath }) {
     };
   }
 
-  const version = await detectVersionInfo(finalRootPath);
+  const versions = {
+    global: await getInstalledOpenClawVersion(),
+    local: await getLocalOpenClawVersion(finalRootPath)
+  };
   const workspace = await readWorkspaceSummary(finalRootPath, config.parsed);
   return {
     rootPath: finalRootPath,
-    version,
+    version: versions.local,
+    versions,
     config,
     workspace
   };
@@ -600,6 +748,15 @@ async function serveStatic(req, res, pathname) {
     res.writeHead(200, { "Content-Type": mime });
     res.end(content);
   } catch {
+    const embedded = getEmbeddedAsset(cleanPath);
+    if (embedded) {
+      const ext = path.extname(cleanPath);
+      const mime = MIME_MAP[ext] || "application/octet-stream";
+      res.writeHead(200, { "Content-Type": mime });
+      res.end(embedded);
+      return;
+    }
+
     res.writeHead(404);
     res.end("Not found");
   }
@@ -633,7 +790,11 @@ async function requestHandler(req, res) {
 async function start() {
   const server = http.createServer(requestHandler);
   server.listen(PORT, () => {
-    console.log(`OpenClaw local manager running at http://localhost:${PORT}`);
+    const url = `http://localhost:${PORT}`;
+    console.log(`OpenClaw local manager running at ${url}`);
+    if (SHOULD_AUTO_OPEN_BROWSER) {
+      openBrowser(url);
+    }
   });
 }
 

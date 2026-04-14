@@ -5,7 +5,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "build:win": "node scripts/build-win-exe.mjs",
+    "build:installer": "node scripts/build-installer.mjs"
+  },
+  "devDependencies": {
+    "postject": "^1.0.0-alpha.6"
   },
   "engines": {
     "node": ">=22"

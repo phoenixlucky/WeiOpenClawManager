@@ -49,14 +49,19 @@
         </div>
         <div class="workspace-grid">
           <article class="info-card">
-            <h3>版本信息</h3>
-            <p id="versionValue" class="metric">unknown</p>
-            <p id="versionSource" class="meta">未找到版本来源</p>
+            <h3>全局版本</h3>
+            <p id="globalVersionValue" class="metric">unknown</p>
+            <p id="globalVersionSource" class="meta">未找到全局版本来源</p>
+          </article>
+          <article class="info-card">
+            <h3>本地配置版本</h3>
+            <p id="localVersionValue" class="metric">unknown</p>
+            <p id="localVersionSource" class="meta">未找到本地版本来源</p>
           </article>
           <article class="info-card">
             <h3>根目录</h3>
             <p id="rootPathValue" class="path-text">-</p>
-            <p class="meta">用于推断版本与默认配置位置</p>
+            <p class="meta">用于推断版本和默认配置位置</p>
           </article>
           <article class="info-card">
             <h3>配置目录 / 配置文件</h3>
@@ -70,7 +75,7 @@
             <p id="updateStatusText" class="meta">尚未检查版本</p>
           </div>
           <div class="actions">
-            <button id="checkUpdateBtn" class="btn btn-outline">检查新版</button>
+            <button id="checkUpdateBtn" class="btn btn-outline">检查新版本</button>
             <button id="runUpdateBtn" class="btn">执行更新</button>
           </div>
         </div>
@@ -98,7 +103,7 @@
         <div class="stack">
           <div class="row-head">
             <h2>结构化预览</h2>
-            <span id="parsedHint" class="muted">仅 JSON 自动解析</span>
+            <span id="parsedHint" class="muted">从 JSON 自动解析</span>
           </div>
           <div id="parsedView" class="parsed-view"></div>
         </div>

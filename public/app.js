@@ -11,8 +11,10 @@ const configCandidateList = document.getElementById("configCandidateList");
 const pathForm = document.getElementById("pathForm");
 const configPathInput = document.getElementById("configPathInput");
 const workspaceStatus = document.getElementById("workspaceStatus");
-const versionValue = document.getElementById("versionValue");
-const versionSource = document.getElementById("versionSource");
+const globalVersionValue = document.getElementById("globalVersionValue");
+const globalVersionSource = document.getElementById("globalVersionSource");
+const localVersionValue = document.getElementById("localVersionValue");
+const localVersionSource = document.getElementById("localVersionSource");
 const rootPathValue = document.getElementById("rootPathValue");
 const configPathValue = document.getElementById("configPathValue");
 const configMeta = document.getElementById("configMeta");
@@ -101,12 +103,44 @@ async function request(url, options = {}) {
   return payload;
 }
 
+function escapeHtml(text) {
+  return String(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function inferRootPathFromConfigPath(configPath) {
+  const normalized = String(configPath || "");
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.toLowerCase().endsWith("\\openclaw.json") || normalized.toLowerCase().endsWith("/openclaw.json")) {
+    return normalized.split(/[/\\]/).slice(0, -1).join("\\");
+  }
+  return normalized;
+}
+
+function formatVersionText(version) {
+  return version?.value || "unknown";
+}
+
+function formatVersionSource(version, fallback) {
+  return version?.source || version?.detail || fallback;
+}
+
+function getVersionPair(workspace) {
+  return {
+    global: workspace?.versions?.global || { value: "unknown", source: null, detail: null },
+    local: workspace?.versions?.local || workspace?.version || { value: "unknown", source: null, detail: null }
+  };
+}
+
 function renderDiscovery() {
   configCandidateList.innerHTML = "";
 
   if (!state.configCandidates.length) {
     discoverySummary.textContent = "没有扫描到标准 OpenClaw 配置目录。";
-    configCandidateList.innerHTML = "";
     return;
   }
 
@@ -133,7 +167,7 @@ function renderDiscovery() {
 function renderParsedObject(value) {
   if (!value || typeof value !== "object") {
     parsedView.innerHTML = "<p class='muted'>当前内容不是可解析的 JSON 对象。</p>";
-    parsedHint.textContent = "仅 JSON 自动解析";
+    parsedHint.textContent = "从 JSON 自动解析";
     return;
   }
 
@@ -149,7 +183,7 @@ function renderParsedObject(value) {
     .map(
       ([key, itemValue]) => `
         <article class="parsed-item">
-          <h3>${key}</h3>
+          <h3>${escapeHtml(key)}</h3>
           <pre>${escapeHtml(JSON.stringify(itemValue, null, 2))}</pre>
         </article>
       `
@@ -176,24 +210,6 @@ function renderInfoList(container, countNode, items, emptyMessage, mapItem) {
   });
 }
 
-function escapeHtml(text) {
-  return String(text)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-function inferRootPathFromConfigPath(configPath) {
-  const normalized = String(configPath || "");
-  if (!normalized) {
-    return "";
-  }
-  if (normalized.toLowerCase().endsWith("\\openclaw.json") || normalized.toLowerCase().endsWith("/openclaw.json")) {
-    return normalized.split(/[/\\\\]/).slice(0, -1).join("\\");
-  }
-  return normalized;
-}
-
 function buildExplanationItems(config) {
   if (!config || typeof config !== "object") {
     return [];
@@ -212,12 +228,12 @@ function buildExplanationItems(config) {
     {
       title: "模型配置",
       path: primaryModel,
-      desc: `主模型 ${primaryModel}；可选模型 ${modelList.length || 0} 个；主并发 ${defaults.maxConcurrent ?? "未配置"}；子代理并发 ${defaults.subagents?.maxConcurrent ?? "未配置"}。`
+      desc: `主模型 ${primaryModel}；可选模型 ${modelList.length} 个；主并发 ${defaults.maxConcurrent ?? "未配置"}；子代理并发 ${defaults.subagents?.maxConcurrent ?? "未配置"}。`
     },
     {
       title: "网关配置",
       path: `port=${config.gateway?.port || "未设置"}`,
-      desc: `模式 ${config.gateway?.mode || "未设置"}；绑定 ${config.gateway?.bind || "未设置"}；认证 ${config.gateway?.auth?.mode || "未设置"}；控制台不安全认证 ${config.gateway?.controlUi?.allowInsecureAuth ? "开启" : "关闭"}。`
+      desc: `模式 ${config.gateway?.mode || "未设置"}；绑定 ${config.gateway?.bind || "未设置"}；认证 ${config.gateway?.auth?.mode || "未设置"}。`
     },
     {
       title: "插件配置",
@@ -234,7 +250,7 @@ function buildExplanationItems(config) {
     {
       title: "工作区配置",
       path: defaults.workspace || "未配置工作区",
-      desc: `工作区路径 ${defaults.workspace || "未设置"}；工具档位 ${config.tools?.profile || "未设置"}；搜索提供方 ${config.tools?.web?.search?.provider || "未设置"}；会话可见性 ${config.tools?.sessions?.visibility || "未设置"}。`
+      desc: `工作区路径 ${defaults.workspace || "未设置"}；工具档位 ${config.tools?.profile || "未设置"}；搜索提供方 ${config.tools?.web?.search?.provider || "未设置"}。`
     }
   ];
 }
@@ -263,8 +279,10 @@ function renderWorkspace() {
   const workspace = state.workspace;
   if (!workspace) {
     workspaceStatus.textContent = "未加载";
-    versionValue.textContent = "unknown";
-    versionSource.textContent = "未找到版本来源";
+    globalVersionValue.textContent = "unknown";
+    globalVersionSource.textContent = "未找到全局版本来源";
+    localVersionValue.textContent = "unknown";
+    localVersionSource.textContent = "未找到本地版本来源";
     rootPathValue.textContent = "-";
     configPathValue.textContent = "-";
     configMeta.textContent = "尚未加载配置";
@@ -277,15 +295,19 @@ function renderWorkspace() {
     return;
   }
 
+  const versions = getVersionPair(workspace);
   workspaceStatus.textContent = workspace.config.exists ? "已加载配置" : "配置文件不存在，可直接新建";
-  versionValue.textContent = workspace.version?.value || "unknown";
-  versionSource.textContent = workspace.version?.source || workspace.version?.detail || "未找到版本来源";
+  globalVersionValue.textContent = formatVersionText(versions.global);
+  globalVersionSource.textContent = formatVersionSource(versions.global, "未找到全局版本来源");
+  localVersionValue.textContent = formatVersionText(versions.local);
+  localVersionSource.textContent = formatVersionSource(versions.local, "未找到本地版本来源");
   rootPathValue.textContent = workspace.rootPath || "-";
   configPathValue.textContent = workspace.config.path || "-";
   configMeta.textContent = workspace.config.exists
     ? `格式: ${workspace.config.format}`
     : "openclaw.json 不存在，保存后会自动创建";
   configEditor.value = workspace.config.raw || "";
+
   renderInfoList(
     workspaceFileList,
     workspaceFileCount,
@@ -297,6 +319,7 @@ function renderWorkspace() {
       desc: `${item.size} bytes`
     })
   );
+
   renderInfoList(
     workspaceSkillList,
     workspaceSkillCount,
@@ -310,7 +333,7 @@ function renderWorkspace() {
   );
 
   renderParsedObject(workspace.config.parsed);
-    renderExplanation(workspace.config.parsed);
+  renderExplanation(workspace.config.parsed);
 }
 
 function renderUpdateStatus(status) {
@@ -319,17 +342,19 @@ function renderUpdateStatus(status) {
     return;
   }
 
+  const globalVersion = status.versions?.global || status.installed || { value: "unknown" };
+
   if (status.error) {
-    updateStatusText.textContent = `当前 ${status.installed?.value || "unknown"}，最新版本检查失败: ${status.error}`;
+    updateStatusText.textContent = `全局 ${globalVersion.value || "unknown"}，最新检查失败: ${status.error}`;
     return;
   }
 
   if (status.canUpdate) {
-    updateStatusText.textContent = `当前 ${status.installed.value}，最新 ${status.latest}，可更新`;
+    updateStatusText.textContent = `全局 ${globalVersion.value}，最新 ${status.latest}，可更新`;
     return;
   }
 
-  updateStatusText.textContent = `当前 ${status.installed?.value || "unknown"}，最新 ${status.latest || "unknown"}，已是最新`;
+  updateStatusText.textContent = `全局 ${globalVersion.value || "unknown"}，最新 ${status.latest || "unknown"}，已是最新`;
 }
 
 async function discover() {
@@ -344,8 +369,7 @@ async function discover() {
   }
 
   if (!state.workspace && state.configCandidates.length) {
-    const firstConfig = state.configCandidates[0];
-    configPathInput.value = firstConfig;
+    configPathInput.value = state.configCandidates[0];
   }
 }
 
@@ -367,22 +391,35 @@ async function checkUpdate() {
       ? `检查更新失败: ${status.error}`
       : status.canUpdate
         ? `发现新版本: ${status.latest}`
-        : `当前已是最新版本: ${status.installed?.value || "unknown"}`
+        : `当前已是最新版本: ${status.versions?.global?.value || status.installed?.value || "unknown"}`
   );
+}
+
+function formatVersionTransition(label, before, after) {
+  return `${label}: ${before?.value || "unknown"} -> ${after?.value || "unknown"}`;
 }
 
 async function runUpdate() {
   startUpdateModal();
-  appendUpdateModalLog("检查当前已安装版本。");
+  appendUpdateModalLog("检查当前版本。");
   setUpdateModalStep("正在执行 npm i -g openclaw@latest ...", 42);
   const result = await request("/api/openclaw/update", { method: "POST" });
-  appendUpdateModalLog(`版本变更: ${result.result.before.value} -> ${result.result.after.value}`);
+  appendUpdateModalLog(formatVersionTransition("全局版本", result.result.before.global, result.result.after.global));
+  appendUpdateModalLog(formatVersionTransition("本地配置版本", result.result.before.local, result.result.after.local));
   if (result.result.output) {
     appendUpdateModalLog(result.result.output);
   }
   setUpdateModalStep("正在校验更新结果...", 78);
-  appendLog(`OpenClaw 已更新: ${result.result.before.value} -> ${result.result.after.value}`);
+  appendLog(`OpenClaw 已更新: ${result.result.before.global.value} -> ${result.result.after.global.value}`);
   appendLog(result.result.output);
+
+  if (state.workspace) {
+    await loadWorkspace({
+      rootPath: state.workspace.rootPath,
+      configPath: state.workspace.config.path
+    });
+  }
+
   await checkUpdate();
   finishUpdateModal("更新完成", 100);
   appendUpdateModalLog("更新完成，可以关闭弹窗。");
@@ -436,10 +473,12 @@ refreshBtn.addEventListener("click", async () => {
       appendLog("已刷新自动发现结果");
       return;
     }
+
     await loadWorkspace({
       rootPath: inferRootPathFromConfigPath(configPathInput.value),
       configPath: configPathInput.value
     });
+    appendLog("已刷新当前配置");
   } catch (error) {
     appendLog(`刷新失败: ${error.message}`);
   }
@@ -450,30 +489,18 @@ checkUpdateBtn.addEventListener("click", async () => {
     await checkUpdate();
   } catch (error) {
     appendLog(`检查更新失败: ${error.message}`);
-    renderUpdateStatus({ installed: { value: "unknown" }, latest: "unknown", error: error.message });
+    updateStatusText.textContent = `检查更新失败: ${error.message}`;
   }
 });
 
 runUpdateBtn.addEventListener("click", async () => {
   try {
-    runUpdateBtn.disabled = true;
-    runUpdateBtn.textContent = "更新中...";
     await runUpdate();
   } catch (error) {
-    if (updateModal.classList.contains("hidden")) {
-      startUpdateModal();
-    }
     appendLog(`更新失败: ${error.message}`);
     appendUpdateModalLog(`更新失败: ${error.message}`);
     finishUpdateModal("更新失败", 100);
-  } finally {
-    runUpdateBtn.disabled = false;
-    runUpdateBtn.textContent = "执行更新";
   }
-});
-
-closeUpdateModalBtn.addEventListener("click", () => {
-  closeUpdateModal();
 });
 
 saveBtn.addEventListener("click", async () => {
@@ -486,9 +513,9 @@ saveBtn.addEventListener("click", async () => {
 
 formatBtn.addEventListener("click", () => {
   try {
-    const parsed = JSON.parse(configEditor.value || "{}");
-    configEditor.value = JSON.stringify(parsed, null, 2);
-    appendLog("JSON 已格式化");
+    const parsed = JSON.parse(configEditor.value);
+    configEditor.value = `${JSON.stringify(parsed, null, 2)}\n`;
+    appendLog("已格式化 JSON");
   } catch (error) {
     appendLog(`格式化失败: ${error.message}`);
   }
@@ -498,28 +525,14 @@ clearLogBtn.addEventListener("click", () => {
   logBox.textContent = "";
 });
 
-configEditor.addEventListener("input", () => {
-  try {
-    const parsed = JSON.parse(configEditor.value || "{}");
-    renderParsedObject(parsed);
-    renderExplanation(parsed);
-  } catch {
-    parsedView.innerHTML = "<p class='muted'>当前文本不是合法 JSON，仍可按原样保存。</p>";
-    parsedHint.textContent = "仅 JSON 自动解析";
-    renderExplanation(null);
+closeUpdateModalBtn.addEventListener("click", closeUpdateModal);
+updateModal.addEventListener("click", (event) => {
+  if (event.target.classList.contains("modal-backdrop")) {
+    closeUpdateModal();
   }
 });
 
-async function bootstrap() {
-  appendLog("系统初始化中...");
-  renderWorkspace();
-  try {
-    await discover();
-    await checkUpdate();
-    appendLog("初始化完成");
-  } catch (error) {
-    appendLog(`初始化失败: ${error.message}`);
-  }
-}
-
-bootstrap();
+renderWorkspace();
+discover().catch((error) => {
+  appendLog(`初始化扫描失败: ${error.message}`);
+});
