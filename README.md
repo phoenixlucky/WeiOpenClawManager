@@ -1,6 +1,6 @@
 # OpenClaw 本地配置客户端
 
-这是一个本地运行的 Node.js Web 客户端，用来查看和编辑 OpenClaw 配置目录、工作区信息，以及检查和执行 OpenClaw 更新。
+这是一个采用“本地 HTTP 服务 + Electron 桌面壳”结构的本地客户端，用来查看和编辑 OpenClaw 配置目录、工作区信息，以及检查和执行 OpenClaw 更新。
 
 ## 功能
 
@@ -19,13 +19,19 @@
 2. 在项目目录执行：
 
 ```bash
+npm install
+```
+
+3. 启动桌面程序：
+
+```bash
 npm start
 ```
 
-3. 在浏览器打开：
+4. 如需仅启动本地 HTTP 服务：
 
-```text
-http://localhost:4173
+```bash
+npm run start:web
 ```
 
 ## 页面内容
@@ -39,9 +45,15 @@ http://localhost:4173
 - 原始配置内容：直接编辑并保存 `openclaw.json`
 - OpenClaw 更新：检查新版本并执行更新
 
+## 架构
+
+- Electron 主进程负责桌面窗口生命周期
+- 本地原生 Node.js `http` 服务负责页面和 API
+- Electron 窗口通过 `http://127.0.0.1:4173` 加载本地界面
+- 前端仍然通过 HTTP 调用本地 `/api/*` 接口
+
 ## 后端实现
 
-- 使用原生 Node.js `http` 服务
 - 本地配置优先从 `openclaw.json` 读取
 - 本地版本优先从配置目录中的版本文件推断
 - 工作区路径优先从 `agents.defaults.workspace` 推断
@@ -60,6 +72,12 @@ npm i -g openclaw@latest
 - `GET /api/openclaw/update-status`：检查当前版本与最新版本
 - `POST /api/openclaw/update`：执行全局更新
 
+## 桌面壳说明
+
+- `npm start` 会先启动本地 HTTP 服务，再由 Electron 打开桌面窗口
+- 不再依赖系统默认浏览器承载界面
+- 如需调试纯 Web 模式，可使用 `npm run start:web`
+
 ## 打包 Windows EXE
 
 1. 安装依赖：
@@ -77,16 +95,29 @@ npm run build:win
 3. 产物位置：
 
 ```text
-dist/win/OpenClaw-Local-Manager.exe
+dist/electron/OpenClaw-Manager-Setup-1.1.1.exe
 ```
+
+## 打包方式
+
+- 当前使用 `electron-builder` 进行 Windows 打包
+- 打包目标为 `NSIS` 标准安装程序，不再使用旧的 Node SEA / IExpress 方案
+- 打包命令为 `npm run build:win`
+- 安装包命名格式为 `OpenClaw-Manager-Setup-${version}.exe`
+- 当前版本号为 `1.1.1`
+- 默认输出目录为 `dist/electron`
+- 安装模式为“所有用户安装”
+- 默认安装目录为 `C:\Program Files\OpenClawManager`
+- 打包时优先复用本地 `node_modules/electron/dist`，避免重复下载 Electron 运行时
+- 安装器、卸载器、应用图标资源均来自项目的 [build](d:\home\Manage-for-openclaw\build) 目录
 
 ## EXE 说明
 
-- 生成的 `.exe` 会启动本地服务，并自动打开浏览器
-- 前端静态资源会在 SEA 构建时嵌入到可执行文件里
-- 如果当前 Node 支持 `--build-sea`，脚本会优先使用官方新流程
-- 如果当前 Node 不支持 `--build-sea`，脚本会自动回退到 `postject` 注入流程
-- 使用 Node 24 及更早版本构建时，请先执行 `npm install`，确保 `postject` 已安装
+- `build:win` 现在直接使用 `electron-builder` 生成标准 Windows 安装程序
+- 安装器、卸载器、应用窗口图标都使用 [build](d:\home\Manage-for-openclaw\build) 目录内资源
+- 目标为 NSIS 安装包，仅支持所有用户安装，默认安装到 `C:\Program Files\OpenClawManager`
+- 桌面和开始菜单快捷方式名称为 `OpenClawManager`
+- 默认输出目录为 `dist/electron`
 
 ## 注意事项
 

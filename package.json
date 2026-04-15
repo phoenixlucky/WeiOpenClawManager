@@ -1,16 +1,62 @@
 {
-  "name": "openclaw-local-manager",
-  "version": "1.0.0",
+  "name": "openclaw-manager",
+  "version": "1.1.1",
   "description": "Local web client for managing OpenClaw version info and .openclaw config",
-  "main": "server.js",
+  "main": "electron-main.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
-    "build:win": "node scripts/build-win-exe.mjs",
-    "build:installer": "node scripts/build-installer.mjs"
+    "start": "electron .",
+    "dev": "electron .",
+    "start:web": "node server.js",
+    "build:win": "electron-builder --win nsis -c.electronDist=node_modules/electron/dist",
+    "build:installer": "electron-builder --win nsis -c.electronDist=node_modules/electron/dist"
   },
   "devDependencies": {
-    "postject": "^1.0.0-alpha.6"
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.openclaw.manager",
+    "productName": "OpenClawManager",
+    "directories": {
+      "output": "dist/electron",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron-main.js",
+      "electron-preload.js",
+      "server.js",
+      "public/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "OpenClaw-Manager-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OpenClawManager",
+      "installerIcon": "build/installerIcon.ico",
+      "uninstallerIcon": "build/uninstallerIcon.ico",
+      "installerHeaderIcon": "build/installerHeaderIcon.ico",
+      "installerHeader": "build/installerHeader.bmp",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "artifactName": "OpenClaw-Manager-Setup-${version}.${ext}"
+    }
   },
   "engines": {
     "node": ">=22"

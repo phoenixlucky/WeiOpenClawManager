@@ -13,14 +13,10 @@ try {
   sea = null;
 }
 
-const PORT = process.env.PORT || 4173;
+const DEFAULT_PORT = Number(process.env.PORT || 4173);
 const APP_DIR = __dirname;
 const WORK_DIR = process.cwd();
 const PUBLIC_DIR = path.join(APP_DIR, "public");
-const SHOULD_AUTO_OPEN_BROWSER =
-  process.env.OPENCLAW_AUTO_OPEN === "1" ||
-  (!/^(node|iojs)(\.exe)?$/i.test(path.basename(process.execPath)) &&
-    process.env.OPENCLAW_AUTO_OPEN !== "0");
 
 const MIME_MAP = {
   ".html": "text/html; charset=utf-8",
@@ -787,15 +783,66 @@ async function requestHandler(req, res) {
   }
 }
 
-async function start() {
+async function startServer(options = {}) {
+  const port = Number(options.port ?? DEFAULT_PORT);
+  const openClient = options.openClient === true;
+  const host = options.host || "127.0.0.1";
   const server = http.createServer(requestHandler);
-  server.listen(PORT, () => {
-    const url = `http://localhost:${PORT}`;
-    console.log(`OpenClaw local manager running at ${url}`);
-    if (SHOULD_AUTO_OPEN_BROWSER) {
-      openBrowser(url);
-    }
+
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, resolve);
+  });
+
+  const address = server.address();
+  const activePort = typeof address === "object" && address ? address.port : port;
+  const url = `http://${host === "::" ? "localhost" : host}:${activePort}`;
+
+  if (openClient) {
+    openBrowser(url);
+  }
+
+  return {
+    server,
+    port: activePort,
+    url,
+    close: () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      })
+  };
+}
+
+async function startCli() {
+  const openClient =
+    process.env.OPENCLAW_AUTO_OPEN === "1" ||
+    (process.env.OPENCLAW_AUTO_OPEN !== "0" &&
+      /^(node|iojs)(\.exe)?$/i.test(path.basename(process.execPath)));
+
+  const runtime = await startServer({
+    port: DEFAULT_PORT,
+    openClient
+  });
+
+  console.log(`OpenClaw local manager running at ${runtime.url}`);
+  return runtime;
+}
+
+if (require.main === module) {
+  startCli().catch((error) => {
+    console.error(error.message || error);
+    process.exitCode = 1;
   });
 }
 
-start();
+module.exports = {
+  DEFAULT_PORT,
+  startServer,
+  requestHandler
+};
