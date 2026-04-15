@@ -1,6 +1,6 @@
 {
   "name": "WeiOpenClawManager",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "description": "WeiLong OpenClaw config manager desktop client",
   "main": "electron-main.js",
   "scripts": {
@@ -30,6 +30,12 @@
       "build/icon.png",
       "package.json"
     ],
+    "extraFiles": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
     "asar": true,
     "win": {
       "signAndEditExecutable": false,
@@ -42,7 +48,7 @@
         }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "尉龙虾OpenClaw配置管理-Setup-${version}.${ext}"
+      "artifactName": "WeiOpenClawManager-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -57,7 +63,7 @@
       "installerHeaderIcon": "build/installerHeaderIcon.ico",
       "installerHeader": "build/installerHeader.bmp",
       "installerSidebar": "build/installerSidebar.bmp",
-      "artifactName": "尉龙虾OpenClaw配置管理-Setup-${version}.${ext}"
+      "artifactName": "WeiOpenClawManager-${version}.${ext}"
     }
   },
   "engines": {

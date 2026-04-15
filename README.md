@@ -107,7 +107,7 @@ npm run build:win
 3. 产物位置：
 
 ```text
-dist/electron/尉龙虾OpenClaw配置管理-Setup-1.3.2.exe
+dist/electron/WeiOpenClawManager-1.4.0.exe
 ```
 
 ## 打包方式
@@ -115,8 +115,8 @@ dist/electron/尉龙虾OpenClaw配置管理-Setup-1.3.2.exe
 - 当前使用 `electron-builder` 进行 Windows 打包
 - 打包目标为 `NSIS` 标准安装程序，不再使用旧的 Node SEA / IExpress 方案
 - 打包命令为 `npm run build:win`
-- 安装包命名格式为 `尉龙虾OpenClaw配置管理-Setup-${version}.exe`
-- 当前版本号为 `1.3.2`
+- 安装包命名格式为 `WeiOpenClawManager-${version}.exe`
+- 当前版本号为 `1.4.0`
 - 默认输出目录为 `dist/electron`
 - 安装模式为“所有用户安装”
 - 默认安装目录为 `D:\Program Files\OpenClawManager`

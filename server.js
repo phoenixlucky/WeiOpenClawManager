@@ -112,8 +112,7 @@ function findOpenClawCmdShim() {
       .readdirSync(npmBinDir, { withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => entry.name)
-      .filter((name) => /^\.?openclaw(?:\.cmd)?(?:-.+)?$/i.test(name) || /^\.?openclaw\.cmd(?:-.+)?$/i.test(name))
-      .filter((name) => /\.cmd(?:-.+)?$/i.test(name))
+      .filter((name) => /^openclaw\.cmd$/i.test(name))
       .map((name) => path.join(npmBinDir, name));
 
     return candidates[0] || null;
@@ -122,13 +121,23 @@ function findOpenClawCmdShim() {
   }
 }
 
+function isStableOpenClawCommandPath(commandPath) {
+  const normalized = normalizePath(commandPath);
+  if (!normalized || !fsSync.existsSync(normalized)) {
+    return false;
+  }
+
+  const baseName = path.basename(normalized).toLowerCase();
+  return ["openclaw", "openclaw.cmd", "openclaw.exe", "openclaw.bat"].includes(baseName);
+}
+
 async function findOpenClawCmdFromPath() {
   try {
     const result = await runPowerShellScript(
       "$cmd = Get-Command openclaw.cmd, openclaw -ErrorAction SilentlyContinue | Where-Object { $_.CommandType -eq 'Application' } | Select-Object -First 1 -ExpandProperty Source; if ($cmd) { Write-Output $cmd }"
     );
     const commandPath = normalizePath(result.stdout || result.stderr || "");
-    return commandPath || null;
+    return isStableOpenClawCommandPath(commandPath) ? commandPath : null;
   } catch {
     return null;
   }
@@ -567,7 +576,7 @@ async function getInstalledOpenClawVersion() {
   const shimPath = findOpenClawCmdShim();
 
   try {
-    if (shimPath) {
+    if (shimPath && isStableOpenClawCommandPath(shimPath)) {
       const result = await runCommand("cmd.exe", ["/c", shimPath, "--version"]);
       const text = result.stdout || result.stderr;
       const version = extractVersionToken(text);
@@ -682,7 +691,7 @@ async function launchOpenClaw(rootPath) {
   const cwd = normalizePath(rootPath) || getDefaultOpenClawRoot() || WORK_DIR;
   const shimPath = findOpenClawCmdShim();
 
-  if (shimPath) {
+  if (shimPath && isStableOpenClawCommandPath(shimPath)) {
     const target = resolveCmdShimTarget(shimPath);
     if (target && !fsSync.existsSync(target)) {
       throw new Error(`OpenClaw 启动失败：全局命令损坏，目标文件不存在 (${target})`);
@@ -712,7 +721,7 @@ async function launchOpenClaw(rootPath) {
 async function resolveOpenClawDashboardUrl() {
   const shimPath = findOpenClawCmdShim();
 
-  if (shimPath) {
+  if (shimPath && isStableOpenClawCommandPath(shimPath)) {
     try {
       const result = await runCommand("cmd.exe", ["/c", shimPath, "dashboard"]);
       const url = extractFirstUrl([result.stdout, result.stderr].filter(Boolean).join("\n"));
