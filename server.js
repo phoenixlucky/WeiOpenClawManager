@@ -107,15 +107,37 @@ function findOpenClawCmdShim() {
     return null;
   }
 
-  const candidates = fsSync
-    .readdirSync(npmBinDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => entry.name)
-    .filter((name) => /^\.?openclaw(?:\.cmd)?(?:-.+)?$/i.test(name) || /^\.?openclaw\.cmd(?:-.+)?$/i.test(name))
-    .filter((name) => /\.cmd(?:-.+)?$/i.test(name))
-    .map((name) => path.join(npmBinDir, name));
+  try {
+    const candidates = fsSync
+      .readdirSync(npmBinDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .filter((name) => /^\.?openclaw(?:\.cmd)?(?:-.+)?$/i.test(name) || /^\.?openclaw\.cmd(?:-.+)?$/i.test(name))
+      .filter((name) => /\.cmd(?:-.+)?$/i.test(name))
+      .map((name) => path.join(npmBinDir, name));
 
-  return candidates[0] || null;
+    return candidates[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveCmdShimTarget(shimPath) {
+  const normalized = normalizePath(shimPath);
+  if (!normalized || !fsSync.existsSync(normalized)) {
+    return null;
+  }
+
+  try {
+    const content = fsSync.readFileSync(normalized, "utf8");
+    const match = content.match(/"%dp0%\\([^"]+)"/i);
+    if (!match || !match[1]) {
+      return null;
+    }
+    return path.join(path.dirname(normalized), match[1].replaceAll("\\", path.sep));
+  } catch {
+    return null;
+  }
 }
 
 async function resolvePowerShellPath() {
@@ -220,6 +242,37 @@ async function statSafe(targetPath) {
 
 function uniquePaths(paths) {
   return [...new Set(paths.filter(Boolean).map((item) => normalizePath(item)).filter(Boolean))];
+}
+
+function extractVersionToken(text) {
+  const normalized = String(text || "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const patterns = [
+    /OpenClaw\s+([0-9][0-9A-Za-z._-]*)/i,
+    /\bopenclaw@([0-9][0-9A-Za-z._-]*)/i,
+    /\bversion\s*[:=]?\s*([0-9][0-9A-Za-z._-]*)/i,
+    /\b([0-9]+\.[0-9]+(?:\.[0-9A-Za-z_-]+)*)\b/
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
+function buildVersionResult(value, source, detail = null) {
+  return {
+    value: value || "unknown",
+    source: source || null,
+    detail: detail || null
+  };
 }
 
 function getDefaultOpenClawRoot() {
@@ -410,58 +463,107 @@ async function readWorkspaceSummary(rootPath, parsedConfig) {
 
 async function getLocalOpenClawVersion(rootPath = getDefaultOpenClawRoot()) {
   const localVersion = await detectVersionInfo(rootPath);
-  if (localVersion.value !== "unknown") {
-    return {
-      value: localVersion.value,
-      source: localVersion.source || "openclaw.json",
-      detail: localVersion.detail || null
-    };
+  return buildVersionResult(
+    localVersion.value,
+    localVersion.source || "openclaw.json",
+    localVersion.detail || "No supported version file found"
+  );
+}
+
+async function tryReadGlobalPackageVersionFromFilesystem() {
+  const npmRootResult = await runCommand("cmd.exe", ["/c", "npm.cmd", "root", "-g"]);
+  const npmRoot = normalizePath((npmRootResult.stdout || npmRootResult.stderr || "").trim());
+  if (!npmRoot) {
+    return null;
   }
 
-  return {
-    value: "unknown",
-    source: null,
-    detail: localVersion.detail || "No supported version file found"
-  };
+  const packageDir = path.join(npmRoot, "openclaw");
+  const packageJsonPath = path.join(packageDir, "package.json");
+
+  if (await pathExists(packageJsonPath)) {
+    const parsed = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
+    const version = extractVersionToken(parsed.version);
+    if (version) {
+      return buildVersionResult(version, packageJsonPath, "Read from npm global package.json");
+    }
+  }
+
+  if (await pathExists(packageDir)) {
+    return buildVersionResult(
+      "unknown",
+      packageDir,
+      "Global OpenClaw package directory exists but package.json is missing or invalid"
+    );
+  }
+
+  return null;
 }
 
 async function getInstalledOpenClawVersion() {
+  const shimPath = findOpenClawCmdShim();
+
   try {
-    const shimPath = findOpenClawCmdShim();
     if (shimPath) {
       const result = await runCommand("cmd.exe", ["/c", shimPath, "--version"]);
       const text = result.stdout || result.stderr;
-      const match = text.match(/OpenClaw\s+([0-9][0-9A-Za-z._-]*)/i);
-      if (match || text) {
-        return {
-          value: match ? match[1] : text || "unknown",
-          source: shimPath
-        };
+      const version = extractVersionToken(text);
+      if (version) {
+        return buildVersionResult(version, shimPath, "Read from openclaw.cmd --version");
       }
     }
+  } catch {
+    // continue with fallback strategies
+  }
 
+  try {
     const result = await runPowerShellScript("& openclaw --version");
     const text = result.stdout || result.stderr;
-    const match = text.match(/OpenClaw\s+([0-9][0-9A-Za-z._-]*)/i);
-    return {
-      value: match ? match[1] : text || "unknown",
-      source: "openclaw --version"
-    };
-  } catch {
-    try {
-      const result = await runCommand("cmd.exe", ["/c", "npm.cmd", "list", "-g", "openclaw", "--depth=0"]);
-      const match = result.stdout.match(/openclaw@([0-9][0-9A-Za-z._-]*)/i);
-      return {
-        value: match ? match[1] : "unknown",
-        source: "npm.cmd list -g openclaw --depth=0"
-      };
-    } catch {
-      return {
-        value: "unknown",
-        source: null
-      };
+    const version = extractVersionToken(text);
+    if (version) {
+      return buildVersionResult(version, "openclaw --version", "Read from PATH command");
     }
+  } catch {
+    // continue with fallback strategies
   }
+
+  try {
+    const result = await runCommand("cmd.exe", ["/c", "npm.cmd", "list", "-g", "openclaw", "--depth=0"]);
+    const text = [result.stdout, result.stderr].filter(Boolean).join("\n");
+    const version = extractVersionToken(text);
+    if (version) {
+      return buildVersionResult(version, "npm.cmd list -g openclaw --depth=0", "Read from npm global list");
+    }
+  } catch {
+    // continue with fallback strategies
+  }
+
+  try {
+    const packageResult = await tryReadGlobalPackageVersionFromFilesystem();
+    if (packageResult) {
+      return packageResult;
+    }
+  } catch {
+    // continue with diagnostics
+  }
+
+  if (shimPath) {
+    const target = resolveCmdShimTarget(shimPath);
+    if (target && !fsSync.existsSync(target)) {
+      return buildVersionResult(
+        "unknown",
+        shimPath,
+        `Global OpenClaw command shim is broken: target file is missing (${target})`
+      );
+    }
+
+    return buildVersionResult(
+      "unknown",
+      shimPath,
+      "Global OpenClaw command exists but version could not be determined"
+    );
+  }
+
+  return buildVersionResult("unknown", null, "OpenClaw is not available as a valid global CLI installation");
 }
 
 async function getLatestOpenClawVersion() {
@@ -525,30 +627,45 @@ async function detectVersionInfo(rootPath) {
 
   const candidates = [
     {
-      file: path.join(root, "openclaw.json"),
-      reader: async (file) => {
-        const parsed = JSON.parse(await fs.readFile(file, "utf-8"));
-        return parsed.meta?.lastTouchedVersion || parsed.wizard?.lastRunVersion || null;
-      }
-    },
-    {
       file: path.join(root, "package.json"),
       reader: async (file) => {
         const parsed = JSON.parse(await fs.readFile(file, "utf-8"));
         return parsed.version || null;
-      }
+      },
+      sourceLabel: "package.json"
     },
     {
       file: path.join(root, "pyproject.toml"),
-      reader: async (file) => extractVersionFromText(await fs.readFile(file, "utf-8"))
+      reader: async (file) => extractVersionFromText(await fs.readFile(file, "utf-8")),
+      sourceLabel: "pyproject.toml"
     },
     {
       file: path.join(root, "VERSION"),
-      reader: async (file) => String(await fs.readFile(file, "utf-8")).trim()
+      reader: async (file) => String(await fs.readFile(file, "utf-8")).trim(),
+      sourceLabel: "VERSION"
     },
     {
       file: path.join(root, "version.txt"),
-      reader: async (file) => String(await fs.readFile(file, "utf-8")).trim()
+      reader: async (file) => String(await fs.readFile(file, "utf-8")).trim(),
+      sourceLabel: "version.txt"
+    },
+    {
+      file: path.join(root, "openclaw.json"),
+      reader: async (file) => {
+        const parsed = JSON.parse(await fs.readFile(file, "utf-8"));
+        return parsed.meta?.lastTouchedVersion || null;
+      },
+      sourceLabel: "openclaw.json meta.lastTouchedVersion",
+      detail: "Fallback to config metadata marker, not guaranteed to match the installed CLI version"
+    },
+    {
+      file: path.join(root, "openclaw.json"),
+      reader: async (file) => {
+        const parsed = JSON.parse(await fs.readFile(file, "utf-8"));
+        return parsed.wizard?.lastRunVersion || null;
+      },
+      sourceLabel: "openclaw.json wizard.lastRunVersion",
+      detail: "Fallback to config wizard marker, not guaranteed to match the installed CLI version"
     }
   ];
 
@@ -558,8 +675,13 @@ async function detectVersionInfo(rootPath) {
     }
     try {
       const value = await candidate.reader(candidate.file);
-      if (value) {
-        return { value, source: candidate.file, detail: "Detected from local files" };
+      const version = extractVersionToken(value || "");
+      if (version) {
+        return {
+          value: version,
+          source: candidate.sourceLabel ? `${candidate.file} (${candidate.sourceLabel})` : candidate.file,
+          detail: candidate.detail || "Detected from local files"
+        };
       }
     } catch {
       // ignore malformed version files

@@ -126,6 +126,9 @@ function formatVersionText(version) {
 }
 
 function formatVersionSource(version, fallback) {
+  if (version?.source && version?.detail) {
+    return `${version.source} · ${version.detail}`;
+  }
   return version?.source || version?.detail || fallback;
 }
 

@@ -95,7 +95,7 @@ npm run build:win
 3. 产物位置：
 
 ```text
-dist/electron/OpenClaw-Manager-Setup-1.1.1.exe
+dist/electron/OpenClaw-Manager-Setup-1.1.2.exe
 ```
 
 ## 打包方式
@@ -104,7 +104,7 @@ dist/electron/OpenClaw-Manager-Setup-1.1.1.exe
 - 打包目标为 `NSIS` 标准安装程序，不再使用旧的 Node SEA / IExpress 方案
 - 打包命令为 `npm run build:win`
 - 安装包命名格式为 `OpenClaw-Manager-Setup-${version}.exe`
-- 当前版本号为 `1.1.1`
+- 当前版本号为 `1.1.2`
 - 默认输出目录为 `dist/electron`
 - 安装模式为“所有用户安装”
 - 默认安装目录为 `C:\Program Files\OpenClawManager`
