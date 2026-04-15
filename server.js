@@ -313,6 +313,11 @@ function buildVersionResult(value, source, detail = null) {
   };
 }
 
+function extractFirstUrl(text) {
+  const match = String(text || "").match(/https?:\/\/[^\s"'<>]+/i);
+  return match ? match[0] : null;
+}
+
 function getDefaultOpenClawRoot() {
   const homeDir = os.homedir();
   return path.join(homeDir, ".openclaw");
@@ -497,6 +502,13 @@ async function readWorkspaceSummary(rootPath, parsedConfig) {
     keyFiles: files,
     skills
   };
+}
+
+async function readFileIfExists(filePath) {
+  if (!(await pathExists(filePath))) {
+    return null;
+  }
+  return fs.readFile(filePath, "utf-8");
 }
 
 async function readTextFile(filePath) {
@@ -697,6 +709,62 @@ async function launchOpenClaw(rootPath) {
   throw new Error("未找到可启动的 OpenClaw 命令，请先确认已正确安装 openclaw.cmd");
 }
 
+async function resolveOpenClawDashboardUrl() {
+  const shimPath = findOpenClawCmdShim();
+
+  if (shimPath) {
+    try {
+      const result = await runCommand("cmd.exe", ["/c", shimPath, "dashboard"]);
+      const url = extractFirstUrl([result.stdout, result.stderr].filter(Boolean).join("\n"));
+      if (url) {
+        return url;
+      }
+    } catch (error) {
+      const url = extractFirstUrl(error?.message || "");
+      if (url) {
+        return url;
+      }
+    }
+  }
+
+  const pathCommand = await findOpenClawCmdFromPath();
+  if (pathCommand) {
+    try {
+      const result = await runCommand("cmd.exe", ["/c", pathCommand, "dashboard"]);
+      const url = extractFirstUrl([result.stdout, result.stderr].filter(Boolean).join("\n"));
+      if (url) {
+        return url;
+      }
+    } catch (error) {
+      const url = extractFirstUrl(error?.message || "");
+      if (url) {
+        return url;
+      }
+    }
+  }
+
+  try {
+    const result = await runPowerShellScript("& openclaw dashboard");
+    const url = extractFirstUrl([result.stdout, result.stderr].filter(Boolean).join("\n"));
+    if (url) {
+      return url;
+    }
+  } catch (error) {
+    const url = extractFirstUrl(error?.message || "");
+    if (url) {
+      return url;
+    }
+  }
+
+  throw new Error("未能从 `openclaw dashboard` 输出中解析到仪表盘 URL");
+}
+
+async function openOpenClawDashboard() {
+  const url = await resolveOpenClawDashboardUrl();
+  openBrowser(url);
+  return { url };
+}
+
 function extractVersionFromText(text) {
   const match = String(text || "").match(/version\s*[:=]\s*["']?([0-9a-zA-Z._-]+)["']?/i);
   return match ? match[1] : null;
@@ -848,6 +916,105 @@ async function saveConfig({ configPath, content }) {
   await fs.mkdir(parentDir, { recursive: true });
   await fs.writeFile(targetPath, String(content ?? ""), "utf-8");
   return loadWorkspace({ configPath: targetPath });
+}
+
+async function exportAllConfig({ rootPath, configPath }) {
+  const workspace = await getWorkspaceContext({ rootPath, configPath });
+  const workspacePath = workspace.workspace.path;
+  const skillsRoot = path.join(workspacePath, "skills");
+
+  const keyFiles = [];
+  for (const item of workspace.workspace.keyFiles || []) {
+    keyFiles.push({
+      name: item.name,
+      path: item.path,
+      content: await fs.readFile(item.path, "utf-8")
+    });
+  }
+
+  const skills = [];
+  for (const skill of workspace.workspace.skills || []) {
+    const skillPath = skill.path;
+    skills.push({
+      name: skill.name,
+      path: skillPath,
+      metaRaw: (await readFileIfExists(path.join(skillPath, "_meta.json"))) || "",
+      skillDocContent: (await readFileIfExists(path.join(skillPath, "SKILL.md"))) || "",
+      readmeContent: (await readFileIfExists(path.join(skillPath, "README.md"))) || ""
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    rootPath: workspace.rootPath,
+    configPath: workspace.config.path,
+    workspacePath,
+    config: {
+      raw: workspace.config.raw || "",
+      parsed: workspace.config.parsed || null
+    },
+    workspaceFiles: keyFiles,
+    skillsRoot,
+    skills
+  };
+}
+
+async function importAllConfig({ rootPath, configPath, bundle, writeFiles }) {
+  if (!writeFiles) {
+    return {
+      imported: false,
+      summary: {
+        workspaceFiles: Array.isArray(bundle?.workspaceFiles) ? bundle.workspaceFiles.length : 0,
+        skills: Array.isArray(bundle?.skills) ? bundle.skills.length : 0
+      }
+    };
+  }
+
+  const workspace = await getWorkspaceContext({ rootPath, configPath });
+  const workspacePath = workspace.workspace.path;
+  const targetConfigPath = workspace.config.path;
+  const skillsRoot = path.join(workspacePath, "skills");
+
+  if (bundle?.config?.raw !== undefined) {
+    await fs.mkdir(path.dirname(targetConfigPath), { recursive: true });
+    await fs.writeFile(targetConfigPath, String(bundle.config.raw ?? ""), "utf-8");
+  }
+
+  for (const file of bundle?.workspaceFiles || []) {
+    if (!file?.name) {
+      continue;
+    }
+    const targetPath = ensurePathInside(workspacePath, path.join(workspacePath, file.name), "工作区文件");
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.writeFile(targetPath, String(file.content ?? ""), "utf-8");
+  }
+
+  for (const skill of bundle?.skills || []) {
+    if (!skill?.name) {
+      continue;
+    }
+    const skillDir = ensurePathInside(skillsRoot, path.join(skillsRoot, skill.name), "工作区技能");
+    await fs.mkdir(skillDir, { recursive: true });
+
+    if (skill.metaRaw !== undefined && skill.metaRaw !== "") {
+      await fs.writeFile(path.join(skillDir, "_meta.json"), String(skill.metaRaw), "utf-8");
+    }
+    if (skill.skillDocContent !== undefined && skill.skillDocContent !== "") {
+      await fs.writeFile(path.join(skillDir, "SKILL.md"), String(skill.skillDocContent), "utf-8");
+    }
+    if (skill.readmeContent !== undefined && skill.readmeContent !== "") {
+      await fs.writeFile(path.join(skillDir, "README.md"), String(skill.readmeContent), "utf-8");
+    }
+  }
+
+  return {
+    imported: true,
+    workspace: await loadWorkspace({ rootPath, configPath }),
+    summary: {
+      workspaceFiles: Array.isArray(bundle?.workspaceFiles) ? bundle.workspaceFiles.length : 0,
+      skills: Array.isArray(bundle?.skills) ? bundle.skills.length : 0
+    }
+  };
 }
 
 async function getWorkspaceContext({ rootPath, configPath }) {
@@ -1087,9 +1254,26 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { ok: true, result });
   }
 
+  if (req.method === "POST" && pathname === "/api/openclaw/control") {
+    const result = await openOpenClawDashboard();
+    return sendJson(res, 200, { ok: true, result });
+  }
+
   if (req.method === "POST" && pathname === "/api/openclaw/update-local-version") {
     const payload = await readJsonBody(req);
     const result = await updateLocalConfigVersion(payload);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/openclaw/export-all") {
+    const payload = await readJsonBody(req);
+    const result = await exportAllConfig(payload);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/openclaw/import-all") {
+    const payload = await readJsonBody(req);
+    const result = await importAllConfig(payload);
     return sendJson(res, 200, { ok: true, result });
   }
 

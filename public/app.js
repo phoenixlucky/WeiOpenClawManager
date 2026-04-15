@@ -7,6 +7,10 @@ const state = {
 const discoverBtn = document.getElementById("discoverBtn");
 const refreshBtn = document.getElementById("refreshBtn");
 const launchOpenClawBtn = document.getElementById("launchOpenClawBtn");
+const openControlBtn = document.getElementById("openControlBtn");
+const exportAllBtn = document.getElementById("exportAllBtn");
+const importAllBtn = document.getElementById("importAllBtn");
+const importAllInput = document.getElementById("importAllInput");
 const discoverySummary = document.getElementById("discoverySummary");
 const configCandidateList = document.getElementById("configCandidateList");
 const pathForm = document.getElementById("pathForm");
@@ -480,6 +484,82 @@ async function launchOpenClaw() {
   appendLog(`已启动 OpenClaw (${result.result.source})，工作目录: ${result.result.cwd}`);
 }
 
+async function openOpenClawControl() {
+  const result = await request("/api/openclaw/control", {
+    method: "POST"
+  });
+
+  appendLog(`已打开 OpenClaw 网关仪表盘: ${result.result.url}`);
+}
+
+function getCurrentWorkspacePayload() {
+  return {
+    rootPath: state.workspace?.rootPath || inferRootPathFromConfigPath(configPathInput.value) || "",
+    configPath: String(configPathInput.value || state.workspace?.config?.path || "").trim()
+  };
+}
+
+function downloadJsonFile(filename, data) {
+  const blob = new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function exportAllConfig() {
+  const payload = getCurrentWorkspacePayload();
+  if (!payload.configPath) {
+    appendLog("请先加载 OpenClaw 配置，再导出所有配置");
+    return;
+  }
+
+  const result = await request("/api/openclaw/export-all", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
+  const stamp = new Date().toISOString().replaceAll(":", "-");
+  downloadJsonFile(`openclaw-all-config-${stamp}.json`, result.result);
+  appendLog("已导出所有配置");
+}
+
+async function importAllConfig(bundle) {
+  const payload = getCurrentWorkspacePayload();
+  if (!payload.configPath) {
+    appendLog("请先加载 OpenClaw 配置，再导入所有配置");
+    return;
+  }
+
+  const fileCount = Array.isArray(bundle?.workspaceFiles) ? bundle.workspaceFiles.length : 0;
+  const skillCount = Array.isArray(bundle?.skills) ? bundle.skills.length : 0;
+  const confirmed = window.confirm(
+    `将导入当前备份，并同步写入配置文件。\n\nopenclaw.json: 1 个\n工作区文件: ${fileCount} 个\n工作区技能: ${skillCount} 个\n\n是否继续写入？`
+  );
+
+  if (!confirmed) {
+    appendLog("已取消导入所有配置");
+    return;
+  }
+
+  const result = await request("/api/openclaw/import-all", {
+    method: "POST",
+    body: JSON.stringify({
+      ...payload,
+      bundle,
+      writeFiles: true
+    })
+  });
+
+  state.workspace = result.result.workspace;
+  renderWorkspace();
+  appendLog(`已导入所有配置，工作区文件 ${result.result.summary.workspaceFiles} 个，技能 ${result.result.summary.skills} 个`);
+}
+
 async function updateLocalConfigVersion() {
   const rootPath =
     state.workspace?.rootPath || inferRootPathFromConfigPath(configPathInput.value) || "";
@@ -727,11 +807,49 @@ launchOpenClawBtn.addEventListener("click", async () => {
   }
 });
 
+openControlBtn.addEventListener("click", async () => {
+  try {
+    await openOpenClawControl();
+  } catch (error) {
+    appendLog(`打开 OpenClaw 网关仪表盘失败: ${error.message}`);
+  }
+});
+
 updateLocalVersionBtn.addEventListener("click", async () => {
   try {
     await updateLocalConfigVersion();
   } catch (error) {
     appendLog(`更新本地配置版本失败: ${error.message}`);
+  }
+});
+
+exportAllBtn.addEventListener("click", async () => {
+  try {
+    await exportAllConfig();
+  } catch (error) {
+    appendLog(`导出所有配置失败: ${error.message}`);
+  }
+});
+
+importAllBtn.addEventListener("click", () => {
+  importAllInput.value = "";
+  importAllInput.click();
+});
+
+importAllInput.addEventListener("change", async (event) => {
+  const [file] = event.target.files || [];
+  if (!file) {
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    const bundle = JSON.parse(text);
+    await importAllConfig(bundle);
+  } catch (error) {
+    appendLog(`导入所有配置失败: ${error.message}`);
+  } finally {
+    importAllInput.value = "";
   }
 });
 

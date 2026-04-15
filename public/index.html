@@ -18,6 +18,9 @@
         </div>
         <div class="hero-actions">
           <button id="launchOpenClawBtn" class="btn">一键启动 OpenClaw</button>
+          <button id="openControlBtn" class="btn btn-outline">打开 OpenClaw 网关仪表盘</button>
+          <button id="exportAllBtn" class="btn btn-outline">导出所有配置</button>
+          <button id="importAllBtn" class="btn btn-outline">导入所有配置</button>
           <button id="discoverBtn" class="btn btn-outline">重新扫描</button>
           <button id="refreshBtn" class="btn btn-outline">重新加载</button>
         </div>
@@ -211,5 +214,6 @@
     </template>
 
     <script src="/app.js" type="module"></script>
+    <input id="importAllInput" type="file" accept="application/json,.json" class="hidden" />
   </body>
 </html>
