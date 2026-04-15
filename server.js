@@ -122,6 +122,18 @@ function findOpenClawCmdShim() {
   }
 }
 
+async function findOpenClawCmdFromPath() {
+  try {
+    const result = await runPowerShellScript(
+      "$cmd = Get-Command openclaw.cmd, openclaw -ErrorAction SilentlyContinue | Where-Object { $_.CommandType -eq 'Application' } | Select-Object -First 1 -ExpandProperty Source; if ($cmd) { Write-Output $cmd }"
+    );
+    const commandPath = normalizePath(result.stdout || result.stderr || "");
+    return commandPath || null;
+  } catch {
+    return null;
+  }
+}
+
 function resolveCmdShimTarget(shimPath) {
   const normalized = normalizePath(shimPath);
   if (!normalized || !fsSync.existsSync(normalized)) {
@@ -195,6 +207,17 @@ function openBrowser(url) {
   child.unref();
 }
 
+function spawnDetached(command, args, options = {}) {
+  const child = spawn(command, args, {
+    cwd: options.cwd || WORK_DIR,
+    env: process.env,
+    detached: true,
+    stdio: "ignore",
+    shell: false
+  });
+  child.unref();
+}
+
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     https
@@ -242,6 +265,21 @@ async function statSafe(targetPath) {
 
 function uniquePaths(paths) {
   return [...new Set(paths.filter(Boolean).map((item) => normalizePath(item)).filter(Boolean))];
+}
+
+function ensurePathInside(parentPath, targetPath, label) {
+  const parent = normalizePath(parentPath);
+  const target = normalizePath(targetPath);
+  if (!parent || !target) {
+    throw new Error(`${label}路径无效`);
+  }
+
+  const relative = path.relative(parent, target);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`${label}不在允许范围内`);
+  }
+
+  return target;
 }
 
 function extractVersionToken(text) {
@@ -461,6 +499,20 @@ async function readWorkspaceSummary(rootPath, parsedConfig) {
   };
 }
 
+async function readTextFile(filePath) {
+  const stat = await statSafe(filePath);
+  if (!stat || !stat.isFile()) {
+    throw new Error("目标文件不存在");
+  }
+
+  const content = await fs.readFile(filePath, "utf-8");
+  return {
+    path: filePath,
+    size: stat.size,
+    content
+  };
+}
+
 async function getLocalOpenClawVersion(rootPath = getDefaultOpenClawRoot()) {
   const localVersion = await detectVersionInfo(rootPath);
   return buildVersionResult(
@@ -612,6 +664,37 @@ async function runOpenClawUpdate() {
     after,
     output: result.stdout || result.stderr || "Updated"
   };
+}
+
+async function launchOpenClaw(rootPath) {
+  const cwd = normalizePath(rootPath) || getDefaultOpenClawRoot() || WORK_DIR;
+  const shimPath = findOpenClawCmdShim();
+
+  if (shimPath) {
+    const target = resolveCmdShimTarget(shimPath);
+    if (target && !fsSync.existsSync(target)) {
+      throw new Error(`OpenClaw 启动失败：全局命令损坏，目标文件不存在 (${target})`);
+    }
+
+    spawnDetached("cmd.exe", ["/c", "start", "", "cmd.exe", "/k", shimPath, "gateway"], { cwd });
+    return {
+      cwd,
+      command: `${shimPath} gateway`,
+      source: "openclaw.cmd"
+    };
+  }
+
+  const pathCommand = await findOpenClawCmdFromPath();
+  if (pathCommand) {
+    spawnDetached("cmd.exe", ["/c", "start", "", "cmd.exe", "/k", pathCommand, "gateway"], { cwd });
+    return {
+      cwd,
+      command: `${pathCommand} gateway`,
+      source: "PATH application"
+    };
+  }
+
+  throw new Error("未找到可启动的 OpenClaw 命令，请先确认已正确安装 openclaw.cmd");
 }
 
 function extractVersionFromText(text) {
@@ -767,6 +850,165 @@ async function saveConfig({ configPath, content }) {
   return loadWorkspace({ configPath: targetPath });
 }
 
+async function getWorkspaceContext({ rootPath, configPath }) {
+  const workspace = await loadWorkspace({ rootPath, configPath });
+  if (!workspace.workspace?.path) {
+    throw new Error("未找到工作区路径");
+  }
+  return workspace;
+}
+
+async function getWorkspaceFileDetail({ rootPath, configPath, filePath }) {
+  const workspace = await getWorkspaceContext({ rootPath, configPath });
+  const targetPath = ensurePathInside(workspace.workspace.path, filePath, "工作区文件");
+  const file = await readTextFile(targetPath);
+  return {
+    file,
+    workspace
+  };
+}
+
+async function saveWorkspaceFile({ rootPath, configPath, filePath, content }) {
+  const workspace = await getWorkspaceContext({ rootPath, configPath });
+  const targetPath = ensurePathInside(workspace.workspace.path, filePath, "工作区文件");
+  const parentDir = path.dirname(targetPath);
+  await fs.mkdir(parentDir, { recursive: true });
+  await fs.writeFile(targetPath, String(content ?? ""), "utf-8");
+  const updatedWorkspace = await loadWorkspace({ rootPath, configPath });
+  const file = await readTextFile(targetPath);
+  return {
+    file,
+    workspace: updatedWorkspace
+  };
+}
+
+async function getSkillDetail({ rootPath, configPath, skillPath }) {
+  const workspace = await getWorkspaceContext({ rootPath, configPath });
+  const skillsRoot = path.join(workspace.workspace.path, "skills");
+  const targetPath = ensurePathInside(skillsRoot, skillPath, "工作区技能");
+  const targetStat = await statSafe(targetPath);
+  if (!targetStat || !targetStat.isDirectory()) {
+    throw new Error("技能目录不存在");
+  }
+
+  const metaPath = path.join(targetPath, "_meta.json");
+  const skillMdPath = path.join(targetPath, "SKILL.md");
+  const readmePath = path.join(targetPath, "README.md");
+  const entries = await fs.readdir(targetPath, { withFileTypes: true });
+
+  let meta = { path: metaPath, exists: false, raw: "", parsed: null };
+  if (await pathExists(metaPath)) {
+    const loaded = await readMaybeJson(metaPath);
+    meta = {
+      path: metaPath,
+      exists: true,
+      raw: loaded.raw,
+      parsed: loaded.parsed
+    };
+  }
+
+  let skillDoc = { path: skillMdPath, exists: false, content: "" };
+  if (await pathExists(skillMdPath)) {
+    skillDoc = {
+      path: skillMdPath,
+      exists: true,
+      content: await fs.readFile(skillMdPath, "utf-8")
+    };
+  }
+
+  let readme = { path: readmePath, exists: false, content: "" };
+  if (await pathExists(readmePath)) {
+    readme = {
+      path: readmePath,
+      exists: true,
+      content: await fs.readFile(readmePath, "utf-8")
+    };
+  }
+
+  return {
+    skill: {
+      path: targetPath,
+      name: path.basename(targetPath),
+      files: entries.map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? "dir" : "file"
+      })),
+      meta,
+      skillDoc,
+      readme
+    },
+    workspace
+  };
+}
+
+async function updateSkillDetail({ rootPath, configPath, skillPath, metaRaw, skillDocContent, readmeContent }) {
+  const workspace = await getWorkspaceContext({ rootPath, configPath });
+  const skillsRoot = path.join(workspace.workspace.path, "skills");
+  const targetPath = ensurePathInside(skillsRoot, skillPath, "工作区技能");
+  const targetStat = await statSafe(targetPath);
+  if (!targetStat || !targetStat.isDirectory()) {
+    throw new Error("技能目录不存在");
+  }
+
+  const metaPath = path.join(targetPath, "_meta.json");
+  const skillMdPath = path.join(targetPath, "SKILL.md");
+  const readmePath = path.join(targetPath, "README.md");
+
+  if (metaRaw !== undefined) {
+    const parsed = JSON.parse(String(metaRaw || "{}"));
+    await fs.writeFile(metaPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+  }
+
+  if (skillDocContent !== undefined) {
+    await fs.writeFile(skillMdPath, String(skillDocContent ?? ""), "utf-8");
+  }
+
+  if (readmeContent !== undefined) {
+    await fs.writeFile(readmePath, String(readmeContent ?? ""), "utf-8");
+  }
+
+  return getSkillDetail({ rootPath, configPath, skillPath: targetPath });
+}
+
+async function updateLocalConfigVersion({ rootPath, configPath }) {
+  const resolved = await resolveWorkspacePaths({ rootPath, configPath });
+  const targetPath = resolved.configPath;
+  const fileExists = await pathExists(targetPath);
+  const latestVersion = await getLatestOpenClawVersion();
+
+  if (!latestVersion || latestVersion === "unknown") {
+    throw new Error("未获取到最新 OpenClaw 版本");
+  }
+
+  let parsed = {};
+  if (fileExists) {
+    const loaded = await readMaybeJson(targetPath);
+    if (loaded.parsed) {
+      parsed = loaded.parsed;
+    } else if (String(loaded.raw || "").trim()) {
+      throw new Error("当前 openclaw.json 不是有效 JSON，无法自动更新本地配置版本");
+    }
+  }
+
+  if (!parsed.meta || typeof parsed.meta !== "object" || Array.isArray(parsed.meta)) {
+    parsed.meta = {};
+  }
+  if (!parsed.wizard || typeof parsed.wizard !== "object" || Array.isArray(parsed.wizard)) {
+    parsed.wizard = {};
+  }
+
+  parsed.meta.lastTouchedVersion = latestVersion;
+  parsed.wizard.lastRunVersion = latestVersion;
+
+  const content = `${JSON.stringify(parsed, null, 2)}\n`;
+  const workspace = await saveConfig({ configPath: targetPath, content });
+
+  return {
+    version: latestVersion,
+    workspace
+  };
+}
+
 async function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -836,6 +1078,42 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "POST" && pathname === "/api/openclaw/update") {
     const result = await runOpenClawUpdate();
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/openclaw/launch") {
+    const payload = await readJsonBody(req);
+    const result = await launchOpenClaw(payload.rootPath);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/openclaw/update-local-version") {
+    const payload = await readJsonBody(req);
+    const result = await updateLocalConfigVersion(payload);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/workspace/file-detail") {
+    const payload = await readJsonBody(req);
+    const result = await getWorkspaceFileDetail(payload);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/workspace/file-save") {
+    const payload = await readJsonBody(req);
+    const result = await saveWorkspaceFile(payload);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/workspace/skill-detail") {
+    const payload = await readJsonBody(req);
+    const result = await getSkillDetail(payload);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/workspace/skill-update") {
+    const payload = await readJsonBody(req);
+    const result = await updateSkillDetail(payload);
     return sendJson(res, 200, { ok: true, result });
   }
 

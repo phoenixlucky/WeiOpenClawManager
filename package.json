@@ -1,7 +1,7 @@
 {
-  "name": "openclaw-manager",
-  "version": "1.1.2",
-  "description": "Local web client for managing OpenClaw version info and .openclaw config",
+  "name": "WeiOpenClawManager",
+  "version": "1.2.1",
+  "description": "WeiLong OpenClaw config manager desktop client",
   "main": "electron-main.js",
   "scripts": {
     "start": "electron .",
@@ -16,7 +16,8 @@
   },
   "build": {
     "appId": "com.openclaw.manager",
-    "productName": "OpenClawManager",
+    "productName": "尉龙虾OpenClaw配置管理",
+    "executableName": "WeiOpenClawManager",
     "directories": {
       "output": "dist/electron",
       "buildResources": "build"
@@ -41,21 +42,22 @@
         }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "OpenClaw-Manager-Setup-${version}.${ext}"
+      "artifactName": "尉龙虾OpenClaw配置管理-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "OpenClawManager",
+      "shortcutName": "尉龙虾OpenClaw配置管理",
       "installerIcon": "build/installerIcon.ico",
       "uninstallerIcon": "build/uninstallerIcon.ico",
       "installerHeaderIcon": "build/installerHeaderIcon.ico",
       "installerHeader": "build/installerHeader.bmp",
       "installerSidebar": "build/installerSidebar.bmp",
-      "artifactName": "OpenClaw-Manager-Setup-${version}.${ext}"
+      "artifactName": "尉龙虾OpenClaw配置管理-Setup-${version}.${ext}"
     }
   },
   "engines": {

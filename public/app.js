@@ -6,6 +6,7 @@ const state = {
 
 const discoverBtn = document.getElementById("discoverBtn");
 const refreshBtn = document.getElementById("refreshBtn");
+const launchOpenClawBtn = document.getElementById("launchOpenClawBtn");
 const discoverySummary = document.getElementById("discoverySummary");
 const configCandidateList = document.getElementById("configCandidateList");
 const pathForm = document.getElementById("pathForm");
@@ -19,6 +20,7 @@ const rootPathValue = document.getElementById("rootPathValue");
 const configPathValue = document.getElementById("configPathValue");
 const configMeta = document.getElementById("configMeta");
 const updateStatusText = document.getElementById("updateStatusText");
+const updateLocalVersionBtn = document.getElementById("updateLocalVersionBtn");
 const checkUpdateBtn = document.getElementById("checkUpdateBtn");
 const runUpdateBtn = document.getElementById("runUpdateBtn");
 const workspaceFileCount = document.getElementById("workspaceFileCount");
@@ -39,11 +41,28 @@ const closeUpdateModalBtn = document.getElementById("closeUpdateModalBtn");
 const updateModalStatus = document.getElementById("updateModalStatus");
 const updateProgressBar = document.getElementById("updateProgressBar");
 const updateModalLog = document.getElementById("updateModalLog");
+const workspaceDetailModal = document.getElementById("workspaceDetailModal");
+const workspaceDetailTitle = document.getElementById("workspaceDetailTitle");
+const workspaceDetailPath = document.getElementById("workspaceDetailPath");
+const workspaceDetailMeta = document.getElementById("workspaceDetailMeta");
+const workspaceDetailExtra = document.getElementById("workspaceDetailExtra");
+const workspaceDetailEditor = document.getElementById("workspaceDetailEditor");
+const workspaceDetailSecondaryEditor = document.getElementById("workspaceDetailSecondaryEditor");
+const workspaceDetailRefreshBtn = document.getElementById("workspaceDetailRefreshBtn");
+const workspaceDetailSaveBtn = document.getElementById("workspaceDetailSaveBtn");
+const closeWorkspaceDetailBtn = document.getElementById("closeWorkspaceDetailBtn");
 const rootCardTpl = document.getElementById("rootCardTpl");
 const infoCardTpl = document.getElementById("infoCardTpl");
+const interactiveCardTpl = document.getElementById("interactiveCardTpl");
 
 const updateModalState = {
   closable: true
+};
+
+const workspaceDetailState = {
+  mode: null,
+  filePath: null,
+  skillPath: null
 };
 
 function appendLog(message) {
@@ -213,6 +232,26 @@ function renderInfoList(container, countNode, items, emptyMessage, mapItem) {
   });
 }
 
+function renderInteractiveList(container, countNode, items, emptyMessage, mapItem, onOpen) {
+  container.innerHTML = "";
+  countNode.textContent = `${items.length} 个`;
+
+  if (!items.length) {
+    container.innerHTML = `<p class='muted'>${emptyMessage}</p>`;
+    return;
+  }
+
+  items.forEach((item) => {
+    const mapped = mapItem(item);
+    const node = interactiveCardTpl.content.firstElementChild.cloneNode(true);
+    node.querySelector("[data-field='title']").textContent = mapped.title;
+    node.querySelector("[data-field='path']").textContent = mapped.path;
+    node.querySelector("[data-field='desc']").textContent = mapped.desc;
+    node.querySelector("[data-action='open']").addEventListener("click", () => onOpen(item));
+    container.appendChild(node);
+  });
+}
+
 function buildExplanationItems(config) {
   if (!config || typeof config !== "object") {
     return [];
@@ -291,8 +330,8 @@ function renderWorkspace() {
     configMeta.textContent = "尚未加载配置";
     updateStatusText.textContent = "尚未检查版本";
     configEditor.value = "";
-    renderInfoList(workspaceFileList, workspaceFileCount, [], "尚未读取到工作区关键文件。", (item) => item);
-    renderInfoList(workspaceSkillList, workspaceSkillCount, [], "尚未读取到工作区技能。", (item) => item);
+    renderInteractiveList(workspaceFileList, workspaceFileCount, [], "尚未读取到工作区关键文件。", (item) => item, () => {});
+    renderInteractiveList(workspaceSkillList, workspaceSkillCount, [], "尚未读取到工作区技能。", (item) => item, () => {});
     renderExplanation(null);
     parsedView.innerHTML = "<p class='muted'>请先从自动发现列表中选择 OpenClaw 配置目录，或手动输入配置目录 / openclaw.json 路径。</p>";
     return;
@@ -311,7 +350,7 @@ function renderWorkspace() {
     : "openclaw.json 不存在，保存后会自动创建";
   configEditor.value = workspace.config.raw || "";
 
-  renderInfoList(
+  renderInteractiveList(
     workspaceFileList,
     workspaceFileCount,
     workspace.workspace?.keyFiles || [],
@@ -320,10 +359,11 @@ function renderWorkspace() {
       title: item.name,
       path: item.path,
       desc: `${item.size} bytes`
-    })
+    }),
+    openWorkspaceFileDetail
   );
 
-  renderInfoList(
+  renderInteractiveList(
     workspaceSkillList,
     workspaceSkillCount,
     workspace.workspace?.skills || [],
@@ -332,7 +372,8 @@ function renderWorkspace() {
       title: item.title || item.name,
       path: item.path,
       desc: item.description || item.name
-    })
+    }),
+    openWorkspaceSkillDetail
   );
 
   renderParsedObject(workspace.config.parsed);
@@ -428,6 +469,197 @@ async function runUpdate() {
   appendUpdateModalLog("更新完成，可以关闭弹窗。");
 }
 
+async function launchOpenClaw() {
+  const rootPath =
+    state.workspace?.rootPath || inferRootPathFromConfigPath(configPathInput.value) || "";
+  const result = await request("/api/openclaw/launch", {
+    method: "POST",
+    body: JSON.stringify({ rootPath })
+  });
+
+  appendLog(`已启动 OpenClaw (${result.result.source})，工作目录: ${result.result.cwd}`);
+}
+
+async function updateLocalConfigVersion() {
+  const rootPath =
+    state.workspace?.rootPath || inferRootPathFromConfigPath(configPathInput.value) || "";
+  const configPath = String(configPathInput.value || state.workspace?.config?.path || "").trim();
+  if (!configPath) {
+    appendLog("请先填写 OpenClaw 配置目录或 openclaw.json 路径");
+    return;
+  }
+
+  const result = await request("/api/openclaw/update-local-version", {
+    method: "POST",
+    body: JSON.stringify({ rootPath, configPath })
+  });
+
+  state.workspace = result.result.workspace;
+  renderWorkspace();
+  appendLog(`本地配置版本已更新为 ${result.result.version}`);
+}
+
+function openWorkspaceDetailModal() {
+  workspaceDetailModal.classList.remove("hidden");
+  workspaceDetailModal.setAttribute("aria-hidden", "false");
+}
+
+function closeWorkspaceDetailModal() {
+  workspaceDetailModal.classList.add("hidden");
+  workspaceDetailModal.setAttribute("aria-hidden", "true");
+}
+
+function renderDetailMetaBlocks(items) {
+  workspaceDetailMeta.innerHTML = "";
+  items.forEach((item) => {
+    const node = infoCardTpl.content.firstElementChild.cloneNode(true);
+    node.querySelector("[data-field='title']").textContent = item.title;
+    node.querySelector("[data-field='path']").textContent = item.path || "-";
+    node.querySelector("[data-field='desc']").textContent = item.desc || "";
+    workspaceDetailMeta.appendChild(node);
+  });
+}
+
+function renderDetailExtraBlocks(items) {
+  workspaceDetailExtra.innerHTML = "";
+  items.forEach((item) => {
+    const node = infoCardTpl.content.firstElementChild.cloneNode(true);
+    node.querySelector("[data-field='title']").textContent = item.title;
+    node.querySelector("[data-field='path']").textContent = item.path || "-";
+    node.querySelector("[data-field='desc']").textContent = item.desc || "";
+    workspaceDetailExtra.appendChild(node);
+  });
+}
+
+async function openWorkspaceFileDetail(fileItem) {
+  const rootPath = state.workspace?.rootPath || "";
+  const configPath = state.workspace?.config?.path || configPathInput.value;
+  const result = await request("/api/workspace/file-detail", {
+    method: "POST",
+    body: JSON.stringify({
+      rootPath,
+      configPath,
+      filePath: fileItem.path
+    })
+  });
+
+  workspaceDetailState.mode = "file";
+  workspaceDetailState.filePath = fileItem.path;
+  workspaceDetailState.skillPath = null;
+  workspaceDetailTitle.textContent = `工作区文件: ${fileItem.name}`;
+  workspaceDetailPath.textContent = result.result.file.path;
+  renderDetailMetaBlocks([
+    { title: "文件大小", path: `${result.result.file.size} bytes`, desc: "可直接修改并保存当前文件内容。" }
+  ]);
+  renderDetailExtraBlocks([]);
+  workspaceDetailEditor.classList.remove("hidden");
+  workspaceDetailSecondaryEditor.classList.add("hidden");
+  workspaceDetailEditor.value = result.result.file.content || "";
+  workspaceDetailSecondaryEditor.value = "";
+  workspaceDetailRefreshBtn.textContent = "刷新详情";
+  workspaceDetailSaveBtn.textContent = "保存文件";
+  openWorkspaceDetailModal();
+}
+
+async function openWorkspaceSkillDetail(skillItem) {
+  const rootPath = state.workspace?.rootPath || "";
+  const configPath = state.workspace?.config?.path || configPathInput.value;
+  const result = await request("/api/workspace/skill-detail", {
+    method: "POST",
+    body: JSON.stringify({
+      rootPath,
+      configPath,
+      skillPath: skillItem.path
+    })
+  });
+
+  const skill = result.result.skill;
+  workspaceDetailState.mode = "skill";
+  workspaceDetailState.skillPath = skill.path;
+  workspaceDetailState.filePath = null;
+  workspaceDetailTitle.textContent = `工作区技能: ${skill.name}`;
+  workspaceDetailPath.textContent = skill.path;
+  renderDetailMetaBlocks([
+    {
+      title: "元数据",
+      path: skill.meta.path,
+      desc: skill.meta.exists ? "可直接编辑 _meta.json 并保存。" : "当前不存在 _meta.json，保存时会自动创建。"
+    },
+    {
+      title: "技能文档",
+      path: skill.skillDoc.path,
+      desc: skill.skillDoc.exists ? "已读取 SKILL.md。" : "当前不存在 SKILL.md，保存时会自动创建。"
+    },
+    {
+      title: "目录文件",
+      path: skill.files.map((item) => item.name).join(", "),
+      desc: `共 ${skill.files.length} 个条目`
+    }
+  ]);
+  renderDetailExtraBlocks(
+    skill.readme.exists
+      ? [{ title: "README", path: skill.readme.path, desc: "已检测到 README.md，可用于补充技能说明。" }]
+      : [{ title: "README", path: skill.readme.path, desc: "当前不存在 README.md。" }]
+  );
+  workspaceDetailEditor.classList.remove("hidden");
+  workspaceDetailSecondaryEditor.classList.remove("hidden");
+  workspaceDetailEditor.value = skill.meta.raw || "{}\n";
+  workspaceDetailSecondaryEditor.value = skill.skillDoc.content || "";
+  workspaceDetailSecondaryEditor.placeholder = "这里可编辑 SKILL.md 内容";
+  workspaceDetailRefreshBtn.textContent = "查询详情";
+  workspaceDetailSaveBtn.textContent = "更新技能";
+  openWorkspaceDetailModal();
+}
+
+async function refreshWorkspaceDetail() {
+  if (workspaceDetailState.mode === "file" && workspaceDetailState.filePath) {
+    await openWorkspaceFileDetail({ name: workspaceDetailState.filePath.split(/[/\\]/).pop(), path: workspaceDetailState.filePath });
+    return;
+  }
+
+  if (workspaceDetailState.mode === "skill" && workspaceDetailState.skillPath) {
+    await openWorkspaceSkillDetail({ name: workspaceDetailState.skillPath.split(/[/\\]/).pop(), path: workspaceDetailState.skillPath });
+  }
+}
+
+async function saveWorkspaceDetail() {
+  const rootPath = state.workspace?.rootPath || "";
+  const configPath = state.workspace?.config?.path || configPathInput.value;
+
+  if (workspaceDetailState.mode === "file" && workspaceDetailState.filePath) {
+    const result = await request("/api/workspace/file-save", {
+      method: "POST",
+      body: JSON.stringify({
+        rootPath,
+        configPath,
+        filePath: workspaceDetailState.filePath,
+        content: workspaceDetailEditor.value
+      })
+    });
+    state.workspace = result.result.workspace;
+    renderWorkspace();
+    appendLog(`工作区文件已保存: ${workspaceDetailState.filePath}`);
+    return;
+  }
+
+  if (workspaceDetailState.mode === "skill" && workspaceDetailState.skillPath) {
+    const result = await request("/api/workspace/skill-update", {
+      method: "POST",
+      body: JSON.stringify({
+        rootPath,
+        configPath,
+        skillPath: workspaceDetailState.skillPath,
+        metaRaw: workspaceDetailEditor.value,
+        skillDocContent: workspaceDetailSecondaryEditor.value
+      })
+    });
+    state.workspace = result.result.workspace;
+    renderWorkspace();
+    appendLog(`工作区技能已更新: ${workspaceDetailState.skillPath}`);
+    await openWorkspaceSkillDetail({ name: result.result.skill.name, path: result.result.skill.path });
+  }
+}
+
 async function saveWorkspace() {
   const configPath = String(configPathInput.value || state.workspace?.config?.path || "").trim();
   if (!configPath) {
@@ -487,6 +719,22 @@ refreshBtn.addEventListener("click", async () => {
   }
 });
 
+launchOpenClawBtn.addEventListener("click", async () => {
+  try {
+    await launchOpenClaw();
+  } catch (error) {
+    appendLog(`启动 OpenClaw 失败: ${error.message}`);
+  }
+});
+
+updateLocalVersionBtn.addEventListener("click", async () => {
+  try {
+    await updateLocalConfigVersion();
+  } catch (error) {
+    appendLog(`更新本地配置版本失败: ${error.message}`);
+  }
+});
+
 checkUpdateBtn.addEventListener("click", async () => {
   try {
     await checkUpdate();
@@ -532,6 +780,29 @@ closeUpdateModalBtn.addEventListener("click", closeUpdateModal);
 updateModal.addEventListener("click", (event) => {
   if (event.target.classList.contains("modal-backdrop")) {
     closeUpdateModal();
+  }
+});
+
+workspaceDetailRefreshBtn.addEventListener("click", async () => {
+  try {
+    await refreshWorkspaceDetail();
+  } catch (error) {
+    appendLog(`刷新详情失败: ${error.message}`);
+  }
+});
+
+workspaceDetailSaveBtn.addEventListener("click", async () => {
+  try {
+    await saveWorkspaceDetail();
+  } catch (error) {
+    appendLog(`保存详情失败: ${error.message}`);
+  }
+});
+
+closeWorkspaceDetailBtn.addEventListener("click", closeWorkspaceDetailModal);
+workspaceDetailModal.addEventListener("click", (event) => {
+  if (event.target.classList.contains("modal-backdrop")) {
+    closeWorkspaceDetailModal();
   }
 });
 

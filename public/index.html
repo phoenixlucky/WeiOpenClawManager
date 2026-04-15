@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenClaw 本地配置客户端</title>
+    <title>尉龙虾OpenClaw配置管理</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -13,10 +13,11 @@
       <header class="hero">
         <div>
           <p class="eyebrow">OpenClaw Local Client</p>
-          <h1>本地版本与 OpenClaw 配置管理</h1>
+          <h1>尉龙虾OpenClaw配置管理</h1>
           <p class="lead">扫描本机 OpenClaw 配置目录，读取版本信息，编辑并保存 `openclaw.json`。</p>
         </div>
         <div class="hero-actions">
+          <button id="launchOpenClawBtn" class="btn">一键启动 OpenClaw</button>
           <button id="discoverBtn" class="btn btn-outline">重新扫描</button>
           <button id="refreshBtn" class="btn btn-outline">重新加载</button>
         </div>
@@ -75,6 +76,7 @@
             <p id="updateStatusText" class="meta">尚未检查版本</p>
           </div>
           <div class="actions">
+            <button id="updateLocalVersionBtn" class="btn btn-outline">更新本地配置版本</button>
             <button id="checkUpdateBtn" class="btn btn-outline">检查新版本</button>
             <button id="runUpdateBtn" class="btn">执行更新</button>
           </div>
@@ -152,6 +154,27 @@
       </div>
     </div>
 
+    <div id="workspaceDetailModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card modal-card-lg" role="dialog" aria-modal="true" aria-labelledby="workspaceDetailTitle">
+        <div class="row-head">
+          <div>
+            <h2 id="workspaceDetailTitle">详情</h2>
+            <p id="workspaceDetailPath" class="meta"></p>
+          </div>
+          <div class="actions">
+            <button id="workspaceDetailRefreshBtn" class="btn btn-outline" type="button">刷新详情</button>
+            <button id="workspaceDetailSaveBtn" class="btn" type="button">保存更新</button>
+            <button id="closeWorkspaceDetailBtn" class="btn btn-ghost" type="button">关闭</button>
+          </div>
+        </div>
+        <div id="workspaceDetailMeta" class="parsed-view compact-section"></div>
+        <div id="workspaceDetailExtra" class="parsed-view compact-section"></div>
+        <textarea id="workspaceDetailEditor" class="editor detail-editor hidden" spellcheck="false"></textarea>
+        <textarea id="workspaceDetailSecondaryEditor" class="editor detail-editor hidden" spellcheck="false"></textarea>
+      </div>
+    </div>
+
     <template id="infoCardTpl">
       <article class="parsed-item">
         <h3 data-field="title"></h3>
@@ -171,6 +194,19 @@
         <div class="actions">
           <button data-action="load" class="btn">加载</button>
         </div>
+      </article>
+    </template>
+
+    <template id="interactiveCardTpl">
+      <article class="parsed-item interactive-card">
+        <div class="row-head">
+          <div>
+            <h3 data-field="title"></h3>
+            <p data-field="path" class="path-text small"></p>
+          </div>
+          <button data-action="open" class="btn btn-outline" type="button">打开</button>
+        </div>
+        <p data-field="desc" class="meta"></p>
       </article>
     </template>
 

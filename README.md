@@ -1,6 +1,6 @@
-# OpenClaw 本地配置客户端
+# 尉龙虾OpenClaw配置管理
 
-这是一个采用“本地 HTTP 服务 + Electron 桌面壳”结构的本地客户端，用来查看和编辑 OpenClaw 配置目录、工作区信息，以及检查和执行 OpenClaw 更新。
+这是一个采用“本地 HTTP 服务 + Electron 桌面壳”结构的本地客户端，用来查看和编辑 OpenClaw 配置目录、工作区信息，以及检查、更新并一键启动 OpenClaw。
 
 ## 功能
 
@@ -9,9 +9,13 @@
 - 展示当前本地 OpenClaw 版本信息
 - 展示工作区关键文件
 - 展示工作区已安装技能
+- 支持点击工作区文件，弹窗查看并直接修改保存
+- 支持点击工作区技能，弹窗查询详情并更新 `_meta.json` / `SKILL.md`
 - 提供结构化预览和中文说明
 - 检查 OpenClaw 最新版本
 - 执行全局更新：`npm i -g openclaw@latest`
+- 一键启动全局 `openclaw gateway`
+- 一键将本地配置版本刷新为最新 OpenClaw 版本
 
 ## 启动
 
@@ -38,12 +42,14 @@ npm run start:web
 
 - 配置入口：快速加载 OpenClaw 配置目录或 `openclaw.json`
 - 当前工作区：查看版本、根目录、配置文件位置
-- 工作区文件：显示常用关键文件
-- 工作区技能：显示 `workspace/skills` 下的技能目录
+- 工作区文件：显示常用关键文件，支持点击弹窗查看和修改
+- 工作区技能：显示 `workspace/skills` 下的技能目录，支持查询详情和更新
 - 结构化预览：按 JSON 顶层字段查看配置
 - 中文解析说明：按模型、网关、插件、渠道、工作区等维度输出摘要
 - 原始配置内容：直接编辑并保存 `openclaw.json`
 - OpenClaw 更新：检查新版本并执行更新
+- 一键启动：直接拉起本机全局 `openclaw gateway`
+- 本地配置版本：一键将 `meta.lastTouchedVersion` 与 `wizard.lastRunVersion` 刷新到最新
 
 ## 架构
 
@@ -71,6 +77,12 @@ npm i -g openclaw@latest
 - `POST /api/openclaw/save`：保存 `openclaw.json`
 - `GET /api/openclaw/update-status`：检查当前版本与最新版本
 - `POST /api/openclaw/update`：执行全局更新
+- `POST /api/openclaw/launch`：一键启动 `openclaw gateway`
+- `POST /api/openclaw/update-local-version`：一键更新本地配置版本到最新 OpenClaw 版本
+- `POST /api/workspace/file-detail`：读取工作区文件详情
+- `POST /api/workspace/file-save`：保存工作区文件修改
+- `POST /api/workspace/skill-detail`：查询工作区技能详情
+- `POST /api/workspace/skill-update`：更新工作区技能元数据和文档
 
 ## 桌面壳说明
 
@@ -95,7 +107,7 @@ npm run build:win
 3. 产物位置：
 
 ```text
-dist/electron/OpenClaw-Manager-Setup-1.1.2.exe
+dist/electron/尉龙虾OpenClaw配置管理-Setup-1.2.1.exe
 ```
 
 ## 打包方式
@@ -103,11 +115,11 @@ dist/electron/OpenClaw-Manager-Setup-1.1.2.exe
 - 当前使用 `electron-builder` 进行 Windows 打包
 - 打包目标为 `NSIS` 标准安装程序，不再使用旧的 Node SEA / IExpress 方案
 - 打包命令为 `npm run build:win`
-- 安装包命名格式为 `OpenClaw-Manager-Setup-${version}.exe`
-- 当前版本号为 `1.1.2`
+- 安装包命名格式为 `尉龙虾OpenClaw配置管理-Setup-${version}.exe`
+- 当前版本号为 `1.2.1`
 - 默认输出目录为 `dist/electron`
 - 安装模式为“所有用户安装”
-- 默认安装目录为 `C:\Program Files\OpenClawManager`
+- 默认安装目录为 `D:\Program Files\OpenClawManager`
 - 打包时优先复用本地 `node_modules/electron/dist`，避免重复下载 Electron 运行时
 - 安装器、卸载器、应用图标资源均来自项目的 [build](d:\home\Manage-for-openclaw\build) 目录
 
@@ -115,8 +127,8 @@ dist/electron/OpenClaw-Manager-Setup-1.1.2.exe
 
 - `build:win` 现在直接使用 `electron-builder` 生成标准 Windows 安装程序
 - 安装器、卸载器、应用窗口图标都使用 [build](d:\home\Manage-for-openclaw\build) 目录内资源
-- 目标为 NSIS 安装包，仅支持所有用户安装，默认安装到 `C:\Program Files\OpenClawManager`
-- 桌面和开始菜单快捷方式名称为 `OpenClawManager`
+- 目标为 NSIS 安装包，仅支持所有用户安装，默认安装到 `D:\Program Files\OpenClawManager`
+- 桌面和开始菜单快捷方式名称为 `尉龙虾OpenClaw配置管理`
 - 默认输出目录为 `dist/electron`
 
 ## 注意事项

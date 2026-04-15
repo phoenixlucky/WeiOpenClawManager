@@ -54,7 +54,7 @@ app.whenReady().then(bootstrap).catch(async (error) => {
   console.error(message);
   await dialog.showMessageBox({
     type: "error",
-    title: "OpenClaw Local Manager",
+    title: "尉龙虾OpenClaw配置管理",
     message: "桌面壳启动失败",
     detail: message
   });
