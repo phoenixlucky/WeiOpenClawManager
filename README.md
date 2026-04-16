@@ -2,6 +2,9 @@
 
 这是一个采用“本地 HTTP 服务 + Electron 桌面壳”结构的本地客户端，用来查看和编辑 OpenClaw 配置目录、工作区信息，以及检查、更新并一键启动 OpenClaw。
 
+## 界面
+![alt text](image.png)
+
 ## 功能
 
 - 读取标准 OpenClaw 配置目录，默认定位到 `C:\Users\Administrator\.openclaw`
