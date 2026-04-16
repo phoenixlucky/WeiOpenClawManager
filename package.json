@@ -48,7 +48,7 @@
         }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "WeiOpenClawManager-${version}.${ext}"
+      "artifactName": "WeiOpenClawManager-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -63,7 +63,7 @@
       "installerHeaderIcon": "build/installerHeaderIcon.ico",
       "installerHeader": "build/installerHeader.bmp",
       "installerSidebar": "build/installerSidebar.bmp",
-      "artifactName": "WeiOpenClawManager-${version}.${ext}"
+      "artifactName": "WeiOpenClawManager-Setup-${version}.${ext}"
     }
   },
   "engines": {

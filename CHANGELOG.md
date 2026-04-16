@@ -14,7 +14,7 @@
 
 ### 打包与安装器
 
-- 保持安装程序文件名为 `WeiOpenClawManager-${version}.exe`
+- 保持安装程序文件名为 `WeiOpenClawManager-Setup-${version}.exe`
 - 保持安装后快捷方式显式引用安装目录中的 `icon.ico`
 
 ### 版本与文档
@@ -29,7 +29,7 @@
 - 安装时将 `build/icon.ico` 直接复制到安装目录根部
 - 桌面与开始菜单快捷方式改为显式引用安装目录下的 `icon.ico`
 - 避免快捷方式继续依赖应用目录内的图标资源路径
-- 安装程序文件名改为 `WeiOpenClawManager-${version}.exe`
+- 安装程序文件名改为 `WeiOpenClawManager-Setup-${version}.exe`
 
 ### 版本与文档
 
