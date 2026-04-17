@@ -101,18 +101,23 @@ function collectPowerShellCandidates() {
   return candidates;
 }
 
-function findOpenClawCmdShim() {
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function findGlobalCmdShim(commandName) {
   const npmBinDir = path.join(process.env.APPDATA || "", "npm");
   if (!npmBinDir || !fsSync.existsSync(npmBinDir)) {
     return null;
   }
 
   try {
+    const commandPattern = new RegExp(`^${escapeRegex(commandName)}\\.cmd$`, "i");
     const candidates = fsSync
       .readdirSync(npmBinDir, { withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => entry.name)
-      .filter((name) => /^openclaw\.cmd$/i.test(name))
+      .filter((name) => commandPattern.test(name))
       .map((name) => path.join(npmBinDir, name));
 
     return candidates[0] || null;
@@ -121,26 +126,44 @@ function findOpenClawCmdShim() {
   }
 }
 
-function isStableOpenClawCommandPath(commandPath) {
+function findOpenClawCmdShim() {
+  return findGlobalCmdShim("openclaw");
+}
+
+function isStableCommandPath(commandPath, commandName) {
   const normalized = normalizePath(commandPath);
   if (!normalized || !fsSync.existsSync(normalized)) {
     return false;
   }
 
   const baseName = path.basename(normalized).toLowerCase();
-  return ["openclaw", "openclaw.cmd", "openclaw.exe", "openclaw.bat"].includes(baseName);
+  const normalizedCommand = String(commandName || "").trim().toLowerCase();
+  return [
+    normalizedCommand,
+    `${normalizedCommand}.cmd`,
+    `${normalizedCommand}.exe`,
+    `${normalizedCommand}.bat`
+  ].includes(baseName);
 }
 
-async function findOpenClawCmdFromPath() {
+function isStableOpenClawCommandPath(commandPath) {
+  return isStableCommandPath(commandPath, "openclaw");
+}
+
+async function findCommandFromPath(commandName) {
   try {
     const result = await runPowerShellScript(
-      "$cmd = Get-Command openclaw.cmd, openclaw -ErrorAction SilentlyContinue | Where-Object { $_.CommandType -eq 'Application' } | Select-Object -First 1 -ExpandProperty Source; if ($cmd) { Write-Output $cmd }"
+      `$cmd = Get-Command ${commandName}.cmd, ${commandName} -ErrorAction SilentlyContinue | Where-Object { $_.CommandType -eq 'Application' } | Select-Object -First 1 -ExpandProperty Source; if ($cmd) { Write-Output $cmd }`
     );
     const commandPath = normalizePath(result.stdout || result.stderr || "");
-    return isStableOpenClawCommandPath(commandPath) ? commandPath : null;
+    return isStableCommandPath(commandPath, commandName) ? commandPath : null;
   } catch {
     return null;
   }
+}
+
+async function findOpenClawCmdFromPath() {
+  return findCommandFromPath("openclaw");
 }
 
 function resolveCmdShimTarget(shimPath) {
@@ -685,6 +708,194 @@ async function runOpenClawUpdate() {
     after,
     output: result.stdout || result.stderr || "Updated"
   };
+}
+
+function writeStreamEvent(res, payload) {
+  res.write(`${JSON.stringify(payload)}\n`);
+}
+
+function createStreamingResponse(res) {
+  res.writeHead(200, {
+    "Content-Type": "application/x-ndjson; charset=utf-8",
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Connection: "keep-alive"
+  });
+}
+
+async function resolveClawHubInstallInvocation(packageName) {
+  const shimPath = findGlobalCmdShim("clawhub");
+  if (shimPath && isStableCommandPath(shimPath, "clawhub")) {
+    const target = resolveCmdShimTarget(shimPath);
+    if (target && !fsSync.existsSync(target)) {
+      throw new Error(`ClawHub 命令损坏，目标文件不存在 (${target})`);
+    }
+
+    return {
+      command: "cmd.exe",
+      args: ["/c", shimPath, "install", packageName],
+      source: "clawhub.cmd",
+      displayCommand: `${shimPath} install ${packageName}`
+    };
+  }
+
+  const pathCommand = await findCommandFromPath("clawhub");
+  if (pathCommand) {
+    return {
+      command: "cmd.exe",
+      args: ["/c", pathCommand, "install", packageName],
+      source: "PATH application",
+      displayCommand: `${pathCommand} install ${packageName}`
+    };
+  }
+
+  return {
+    command: "cmd.exe",
+    args: ["/c", "clawhub", "install", packageName],
+    source: "PATH lookup",
+    displayCommand: `clawhub install ${packageName}`
+  };
+}
+
+async function streamClawHubInstall(res, payload) {
+  createStreamingResponse(res);
+
+  const packageName = String(payload?.packageName || "").trim();
+  if (!packageName) {
+    writeStreamEvent(res, { type: "error", progress: 100, message: "请输入要安装的 ClawHub 包名" });
+    res.end();
+    return;
+  }
+
+  if (/\s/.test(packageName)) {
+    writeStreamEvent(res, { type: "error", progress: 100, message: "包名不能包含空格" });
+    res.end();
+    return;
+  }
+
+  if (!/^[A-Za-z0-9@._/-]+$/.test(packageName)) {
+    writeStreamEvent(res, {
+      type: "error",
+      progress: 100,
+      message: "包名仅支持字母、数字以及 @ . _ / -"
+    });
+    res.end();
+    return;
+  }
+
+  const cwd = normalizePath(payload?.rootPath) || getDefaultOpenClawRoot() || WORK_DIR;
+  writeStreamEvent(res, {
+    type: "start",
+    progress: 8,
+    message: `准备安装 ${packageName}`,
+    cwd
+  });
+
+  let invocation;
+  try {
+    invocation = await resolveClawHubInstallInvocation(packageName);
+  } catch (error) {
+    writeStreamEvent(res, {
+      type: "error",
+      progress: 100,
+      message: error.message || "无法解析 ClawHub 安装命令"
+    });
+    res.end();
+    return;
+  }
+
+  writeStreamEvent(res, {
+    type: "resolved",
+    progress: 16,
+    message: `开始执行 ${invocation.displayCommand}`,
+    source: invocation.source
+  });
+
+  const child = spawn(invocation.command, invocation.args, {
+    cwd,
+    env: process.env,
+    shell: false
+  });
+
+  let lineCount = 0;
+  let combinedOutput = "";
+  let stdoutBuffer = "";
+  let stderrBuffer = "";
+  let settled = false;
+
+  const emitLine = (kind, line) => {
+    const content = String(line || "").trim();
+    if (!content) {
+      return;
+    }
+
+    lineCount += 1;
+    combinedOutput += `${content}\n`;
+    const progress = Math.min(92, 16 + lineCount * 6);
+    writeStreamEvent(res, {
+      type: "log",
+      channel: kind,
+      progress,
+      message: content
+    });
+  };
+
+  const consumeBuffer = (kind, chunk, carry) => {
+    const merged = `${carry}${String(chunk || "")}`;
+    const lines = merged.split(/\r?\n/);
+    const nextCarry = lines.pop() || "";
+    lines.forEach((line) => emitLine(kind, line));
+    return nextCarry;
+  };
+
+  child.stdout.on("data", (chunk) => {
+    stdoutBuffer = consumeBuffer("stdout", chunk, stdoutBuffer);
+  });
+
+  child.stderr.on("data", (chunk) => {
+    stderrBuffer = consumeBuffer("stderr", chunk, stderrBuffer);
+  });
+
+  child.on("error", (error) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    writeStreamEvent(res, {
+      type: "error",
+      progress: 100,
+      message: error.message || "ClawHub 安装进程启动失败"
+    });
+    res.end();
+  });
+
+  child.on("close", (code) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    emitLine("stdout", stdoutBuffer);
+    emitLine("stderr", stderrBuffer);
+
+    if (code === 0) {
+      writeStreamEvent(res, {
+        type: "complete",
+        progress: 100,
+        message: `已安装 ${packageName}`,
+        output: combinedOutput.trim(),
+        code: 0
+      });
+      res.end();
+      return;
+    }
+
+    writeStreamEvent(res, {
+      type: "error",
+      progress: 100,
+      message: combinedOutput.trim() || `ClawHub install 失败，退出码 ${code}`,
+      code
+    });
+    res.end();
+  });
 }
 
 async function launchOpenClaw(rootPath) {
@@ -1266,6 +1477,12 @@ async function handleApi(req, res, pathname) {
   if (req.method === "POST" && pathname === "/api/openclaw/control") {
     const result = await openOpenClawDashboard();
     return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/clawhub/install") {
+    const payload = await readJsonBody(req);
+    await streamClawHubInstall(res, payload);
+    return;
   }
 
   if (req.method === "POST" && pathname === "/api/openclaw/update-local-version") {

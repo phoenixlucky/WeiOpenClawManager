@@ -18,6 +18,9 @@
 - 检查 OpenClaw 最新版本
 - 执行全局更新：`npm i -g openclaw@latest`
 - 一键启动全局 `openclaw gateway`
+- 一键打开 ClawHub 官网：`https://clawhub.ai/`
+- 支持输入 ClawHub 包名并执行：`clawhub install <包名>`
+- 通过弹窗实时查看 ClawHub 安装输出和进度
 - 一键将本地配置版本刷新为最新 OpenClaw 版本
 
 ## 启动
@@ -51,6 +54,7 @@ npm run start:web
 - 中文解析说明：按模型、网关、插件、渠道、工作区等维度输出摘要
 - 原始配置内容：直接编辑并保存 `openclaw.json`
 - OpenClaw 更新：检查新版本并执行更新
+- ClawHub 安装：输入包名后执行 `clawhub install`，并在弹窗查看实时日志
 - 一键启动：直接拉起本机全局 `openclaw gateway`
 - 本地配置版本：一键将 `meta.lastTouchedVersion` 与 `wizard.lastRunVersion` 刷新到最新
 
@@ -81,6 +85,7 @@ npm i -g openclaw@latest
 - `GET /api/openclaw/update-status`：检查当前版本与最新版本
 - `POST /api/openclaw/update`：执行全局更新
 - `POST /api/openclaw/launch`：一键启动 `openclaw gateway`
+- `POST /api/clawhub/install`：执行 `clawhub install <包名>`，以流式日志返回安装进度
 - `POST /api/openclaw/update-local-version`：一键更新本地配置版本到最新 OpenClaw 版本
 - `POST /api/workspace/file-detail`：读取工作区文件详情
 - `POST /api/workspace/file-save`：保存工作区文件修改
@@ -110,7 +115,7 @@ npm run build:win
 3. 产物位置：
 
 ```text
-dist/electron/WeiOpenClawManager-Setup-1.4.0.exe
+dist/electron/WeiOpenClawManager-Setup-1.5.0.exe
 ```
 
 ## 打包方式
@@ -119,7 +124,7 @@ dist/electron/WeiOpenClawManager-Setup-1.4.0.exe
 - 打包目标为 `NSIS` 标准安装程序，不再使用旧的 Node SEA / IExpress 方案
 - 打包命令为 `npm run build:win`
 - 安装包命名格式为 `WeiOpenClawManager-Setup-${version}.exe`
-- 当前版本号为 `1.4.0`
+- 当前版本号为 `1.5.0`
 - 默认输出目录为 `dist/electron`
 - 安装模式为“所有用户安装”
 - 默认安装目录为 `D:\Program Files\OpenClawManager`
@@ -138,5 +143,6 @@ dist/electron/WeiOpenClawManager-Setup-1.4.0.exe
 
 - 这是本地工具，不包含鉴权
 - 更新 OpenClaw 依赖本机 `npm` 全局安装权限
+- 安装 ClawHub 包依赖本机可执行 `clawhub` 命令
 - 最新版本检查依赖访问 npm registry
 - 如果修改后页面没有反映新接口，请先重启 `npm start`

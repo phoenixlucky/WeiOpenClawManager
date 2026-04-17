@@ -8,6 +8,9 @@ const discoverBtn = document.getElementById("discoverBtn");
 const refreshBtn = document.getElementById("refreshBtn");
 const launchOpenClawBtn = document.getElementById("launchOpenClawBtn");
 const openControlBtn = document.getElementById("openControlBtn");
+const openClawHubSiteBtn = document.getElementById("openClawHubSiteBtn");
+const clawhubPackageInput = document.getElementById("clawhubPackageInput");
+const installClawHubBtn = document.getElementById("installClawHubBtn");
 const exportAllBtn = document.getElementById("exportAllBtn");
 const importAllBtn = document.getElementById("importAllBtn");
 const importAllInput = document.getElementById("importAllInput");
@@ -41,6 +44,7 @@ const formatBtn = document.getElementById("formatBtn");
 const logBox = document.getElementById("logBox");
 const clearLogBtn = document.getElementById("clearLogBtn");
 const updateModal = document.getElementById("updateModal");
+const updateModalTitle = document.getElementById("updateModalTitle");
 const closeUpdateModalBtn = document.getElementById("closeUpdateModalBtn");
 const updateModalStatus = document.getElementById("updateModalStatus");
 const updateProgressBar = document.getElementById("updateProgressBar");
@@ -98,13 +102,16 @@ function closeUpdateModal() {
   updateModal.setAttribute("aria-hidden", "true");
 }
 
-function startUpdateModal() {
+function startUpdateModal({ title = "任务进度", statusText = "准备执行...", progress = 12, logMessage = "" } = {}) {
   updateModalState.closable = false;
   closeUpdateModalBtn.disabled = true;
+  updateModalTitle.textContent = title;
   updateModalLog.textContent = "";
   openUpdateModal();
-  setUpdateModalStep("准备更新环境...", 12);
-  appendUpdateModalLog("开始执行 OpenClaw 更新。");
+  setUpdateModalStep(statusText, progress);
+  if (logMessage) {
+    appendUpdateModalLog(logMessage);
+  }
 }
 
 function finishUpdateModal(statusText, progress) {
@@ -124,6 +131,40 @@ async function request(url, options = {}) {
     throw new Error(payload.error || "请求失败");
   }
   return payload;
+}
+
+async function streamJsonLines(response, onMessage) {
+  if (!response.body) {
+    throw new Error("浏览器未返回可读取的流");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      onMessage(JSON.parse(trimmed));
+    }
+  }
+
+  const finalChunk = `${buffer}${decoder.decode()}`.trim();
+  if (finalChunk) {
+    onMessage(JSON.parse(finalChunk));
+  }
 }
 
 function escapeHtml(text) {
@@ -448,7 +489,12 @@ function formatVersionTransition(label, before, after) {
 }
 
 async function runUpdate() {
-  startUpdateModal();
+  startUpdateModal({
+    title: "OpenClaw 更新进度",
+    statusText: "准备更新环境...",
+    progress: 12,
+    logMessage: "开始执行 OpenClaw 更新。"
+  });
   appendUpdateModalLog("检查当前版本。");
   setUpdateModalStep("正在执行 npm i -g openclaw@latest ...", 42);
   const result = await request("/api/openclaw/update", { method: "POST" });
@@ -490,6 +536,79 @@ async function openOpenClawControl() {
   });
 
   appendLog(`已打开 OpenClaw 网关仪表盘: ${result.result.url}`);
+}
+
+function setClawHubInstallBusy(isBusy) {
+  clawhubPackageInput.disabled = isBusy;
+  installClawHubBtn.disabled = isBusy;
+}
+
+function openClawHubSite() {
+  window.open("https://clawhub.ai/", "_blank", "noopener,noreferrer");
+  appendLog("已打开 ClawHub 官网: https://clawhub.ai/");
+}
+
+async function installClawHubPackage() {
+  const packageName = String(clawhubPackageInput.value || "").trim();
+  if (!packageName) {
+    appendLog("请输入 ClawHub 包名");
+    return;
+  }
+
+  setClawHubInstallBusy(true);
+  startUpdateModal({
+    title: "ClawHub 安装进度",
+    statusText: `准备安装 ${packageName} ...`,
+    progress: 8,
+    logMessage: `开始执行 clawhub install ${packageName}`
+  });
+
+  let failedMessage = "";
+
+  try {
+    const response = await fetch("/api/clawhub/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        packageName,
+        rootPath: state.workspace?.rootPath || inferRootPathFromConfigPath(configPathInput.value) || ""
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || "ClawHub 安装请求失败");
+    }
+
+    await streamJsonLines(response, (event) => {
+      if (typeof event.progress === "number") {
+        setUpdateModalStep(event.message || "处理中...", event.progress);
+      }
+
+      if (event.message) {
+        appendUpdateModalLog(event.message);
+      }
+
+      if (event.type === "complete") {
+        finishUpdateModal("安装完成", 100);
+        appendLog(`ClawHub 包安装完成: ${packageName}`);
+      }
+
+      if (event.type === "error") {
+        failedMessage = event.message || "ClawHub 安装失败";
+      }
+    });
+
+    if (failedMessage) {
+      throw new Error(failedMessage);
+    }
+  } catch (error) {
+    appendLog(`ClawHub 包安装失败: ${error.message}`);
+    appendUpdateModalLog(`安装失败: ${error.message}`);
+    finishUpdateModal("安装失败", 100);
+  } finally {
+    setClawHubInstallBusy(false);
+  }
 }
 
 function getCurrentWorkspacePayload() {
@@ -813,6 +932,23 @@ openControlBtn.addEventListener("click", async () => {
   } catch (error) {
     appendLog(`打开 OpenClaw 网关仪表盘失败: ${error.message}`);
   }
+});
+
+openClawHubSiteBtn.addEventListener("click", () => {
+  openClawHubSite();
+});
+
+installClawHubBtn.addEventListener("click", async () => {
+  await installClawHubPackage();
+});
+
+clawhubPackageInput.addEventListener("keydown", async (event) => {
+  if (event.key !== "Enter" || event.shiftKey) {
+    return;
+  }
+
+  event.preventDefault();
+  await installClawHubPackage();
 });
 
 updateLocalVersionBtn.addEventListener("click", async () => {

@@ -19,6 +19,7 @@
         <div class="hero-actions">
           <button id="launchOpenClawBtn" class="btn">一键启动 OpenClaw</button>
           <button id="openControlBtn" class="btn btn-outline">打开 OpenClaw 网关仪表盘</button>
+          <button id="openClawHubSiteBtn" class="btn btn-outline">打开 ClawHub 官网</button>
           <button id="exportAllBtn" class="btn btn-outline">导出所有配置</button>
           <button id="importAllBtn" class="btn btn-outline">导入所有配置</button>
           <button id="discoverBtn" class="btn btn-outline">重新扫描</button>
@@ -43,6 +44,26 @@
             <p id="discoverySummary" class="path-text small">尚未扫描</p>
           </div>
           <div id="configCandidateList" class="compact-list"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="row-head">
+          <div>
+            <h2>ClawHub 安装</h2>
+            <p class="meta">输入 ClawHub 上的包名，执行 `clawhub install 包名`，并在弹窗里查看实时输出。</p>
+          </div>
+        </div>
+        <div class="install-form">
+          <div class="install-inline">
+            <input
+              id="clawhubPackageInput"
+              name="clawhubPackage"
+              placeholder="输入 ClawHub 包名，例如 @scope/package"
+            />
+            <button id="installClawHubBtn" class="btn" type="button">安装 ClawHub 包</button>
+          </div>
+          <p class="meta">默认在当前已加载的 OpenClaw 根目录下执行；如果未加载配置，则回退到默认 OpenClaw 目录。</p>
         </div>
       </section>
 
@@ -146,7 +167,7 @@
       <div class="modal-backdrop"></div>
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="updateModalTitle">
         <div class="row-head">
-          <h2 id="updateModalTitle">OpenClaw 更新进度</h2>
+          <h2 id="updateModalTitle">任务进度</h2>
           <button id="closeUpdateModalBtn" class="btn btn-ghost" type="button">关闭</button>
         </div>
         <p id="updateModalStatus" class="meta">等待开始</p>

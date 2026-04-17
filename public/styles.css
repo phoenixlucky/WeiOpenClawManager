@@ -55,8 +55,8 @@ body {
   position: relative;
   z-index: 1;
   max-width: 1180px;
-  margin: 28px auto;
-  padding: 0 16px 40px;
+  margin: 18px auto;
+  padding: 0 14px 28px;
 }
 
 .hero,
@@ -72,8 +72,8 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 24px;
+  gap: 12px;
+  padding: 18px 20px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.2)),
     linear-gradient(120deg, rgba(255, 102, 45, 0.18), rgba(177, 63, 166, 0.18));
@@ -82,16 +82,16 @@ body {
 .hero-actions,
 .actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .eyebrow {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   color: var(--brand);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
 }
 
 h1,
@@ -102,14 +102,28 @@ p {
 }
 
 h1 {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
-  font-size: clamp(1.7rem, 3vw, 2.35rem);
+  font-size: clamp(1.5rem, 2.5vw, 2.05rem);
 }
 
 h2 {
   margin-bottom: 0;
-  font-size: 1.05rem;
+  font-size: 1rem;
+}
+
+h3 {
+  font-size: 0.96rem;
+  margin-bottom: 6px;
+}
+
+.lead,
+.meta,
+.muted,
+input,
+textarea,
+.btn {
+  font-size: 0.92rem;
 }
 
 .lead,
@@ -119,21 +133,30 @@ h2 {
 }
 
 .panel {
-  margin-top: 16px;
-  padding: 18px;
+  margin-top: 12px;
+  padding: 14px;
 }
 
 .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 14px;
 }
 
 .stack,
 .install-form,
 .root-list {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+}
+
+.install-inline {
+  display: flex;
+  gap: 8px;
+}
+
+.install-inline input {
+  flex: 1;
 }
 
 .root-list {
@@ -147,7 +170,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 
 .config-entry,
@@ -156,12 +179,12 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .config-entry-form {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex: 1;
 }
 
@@ -170,27 +193,27 @@ h2 {
 }
 
 .config-entry-copy {
-  min-width: 240px;
+  min-width: 220px;
 }
 
 .discovery-strip {
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
   align-items: flex-start;
 }
 
 .compact-list {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
 .mini-label {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -200,7 +223,7 @@ h2 {
   background: rgba(255, 251, 248, 0.92);
   color: var(--ink);
   border-radius: 999px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   cursor: pointer;
   font: inherit;
   max-width: 100%;
@@ -213,9 +236,9 @@ h2 {
 
 label {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
 }
 
 input,
@@ -223,8 +246,8 @@ textarea {
   width: 100%;
   border: 1px solid var(--line);
   background: rgba(255, 252, 249, 0.9);
-  border-radius: 12px;
-  padding: 11px 13px;
+  border-radius: 10px;
+  padding: 9px 11px;
   color: var(--ink);
   font: inherit;
 }
@@ -237,8 +260,8 @@ textarea:focus {
 
 .btn {
   border: 0;
-  border-radius: 11px;
-  padding: 10px 14px;
+  border-radius: 10px;
+  padding: 8px 12px;
   font-weight: 600;
   color: #fff;
   cursor: pointer;
@@ -267,9 +290,9 @@ textarea:focus {
 .info-card,
 .parsed-item {
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(255, 252, 249, 0.72);
-  padding: 14px;
+  padding: 11px 12px;
 }
 
 .interactive-card {
@@ -284,21 +307,21 @@ textarea:focus {
 .workspace-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .workspace-grid .info-card {
-  padding: 12px;
+  padding: 10px;
 }
 
 .workspace-grid .info-card h3 {
-  font-size: 0.92rem;
-  margin-bottom: 8px;
+  font-size: 0.88rem;
+  margin-bottom: 6px;
 }
 
 .workspace-grid .info-card .metric {
-  font-size: 1.55rem;
-  margin-bottom: 6px;
+  font-size: 1.32rem;
+  margin-bottom: 4px;
 }
 
 .workspace-grid .info-card .meta,
@@ -308,32 +331,32 @@ textarea:focus {
 }
 
 .update-bar {
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
 }
 
 .metric {
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
-  font-size: 2rem;
+  font-size: 1.7rem;
   line-height: 1.1;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .path-text {
   word-break: break-all;
   font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.92rem;
+  font-size: 0.86rem;
 }
 
 .path-text.small {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 
 .tag {
   border-radius: 999px;
-  padding: 4px 8px;
-  font-size: 0.76rem;
+  padding: 3px 7px;
+  font-size: 0.72rem;
   border: 1px solid var(--line);
   color: var(--muted);
 }
@@ -346,37 +369,37 @@ textarea:focus {
 
 .parsed-view {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   align-content: start;
 }
 
 .parsed-item pre {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   white-space: pre-wrap;
   word-break: break-word;
   background: rgba(255, 239, 231, 0.82);
-  border-radius: 10px;
-  padding: 10px;
-  font-size: 0.84rem;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 0.8rem;
 }
 
 .editor {
-  min-height: 420px;
+  min-height: 360px;
   resize: vertical;
   font-family: "Consolas", "Courier New", monospace;
-  line-height: 1.5;
+  line-height: 1.42;
 }
 
 .log-box {
   margin: 0;
-  max-height: 220px;
+  max-height: 200px;
   overflow: auto;
   background: linear-gradient(180deg, #5c183d 0%, #6f215d 100%);
   color: #ffe7d7;
-  border-radius: 12px;
-  padding: 12px;
-  font-size: 0.84rem;
-  line-height: 1.5;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 0.8rem;
+  line-height: 1.42;
 }
 
 .hidden {
@@ -403,9 +426,9 @@ textarea:focus {
   margin: 10vh auto 0;
   background: rgba(255, 248, 242, 0.97);
   border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 20px;
+  border-radius: 16px;
   box-shadow: var(--shadow);
-  padding: 18px;
+  padding: 14px;
 }
 
 .modal-card-lg {
@@ -416,20 +439,20 @@ textarea:focus {
 }
 
 .compact-section {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .detail-editor {
-  min-height: 240px;
-  margin-top: 12px;
-  font-size: 0.82rem;
-  line-height: 1.45;
-  padding: 10px 12px;
+  min-height: 210px;
+  margin-top: 10px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  padding: 8px 10px;
 }
 
 #workspaceDetailMeta .parsed-item,
 #workspaceDetailExtra .parsed-item {
-  padding: 11px 12px;
+  padding: 9px 10px;
 }
 
 #workspaceDetailMeta .parsed-item h3,
@@ -463,11 +486,11 @@ textarea:focus {
 
 .progress-track {
   width: 100%;
-  height: 10px;
+  height: 8px;
   border-radius: 999px;
   background: rgba(255, 176, 122, 0.34);
   overflow: hidden;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .progress-bar {
@@ -479,16 +502,16 @@ textarea:focus {
 }
 
 .modal-log {
-  margin: 14px 0 0;
-  min-height: 180px;
-  max-height: 320px;
+  margin: 10px 0 0;
+  min-height: 150px;
+  max-height: 280px;
   overflow: auto;
   background: linear-gradient(180deg, #5c183d 0%, #6f215d 100%);
   color: #ffe7d7;
-  border-radius: 12px;
-  padding: 12px;
-  font-size: 0.84rem;
-  line-height: 1.5;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 0.8rem;
+  line-height: 1.42;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -506,7 +529,8 @@ textarea:focus {
   .config-entry,
   .update-bar,
   .discovery-strip,
-  .config-entry-form {
+  .config-entry-form,
+  .install-inline {
     flex-direction: column;
     align-items: stretch;
   }
