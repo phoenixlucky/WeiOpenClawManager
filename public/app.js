@@ -30,10 +30,26 @@ const updateStatusText = document.getElementById("updateStatusText");
 const updateLocalVersionBtn = document.getElementById("updateLocalVersionBtn");
 const checkUpdateBtn = document.getElementById("checkUpdateBtn");
 const runUpdateBtn = document.getElementById("runUpdateBtn");
+const modelSummary = document.getElementById("modelSummary");
+const modelCount = document.getElementById("modelCount");
+const modelList = document.getElementById("modelList");
+const modelNameInput = document.getElementById("modelNameInput");
+const modelProviderInput = document.getElementById("modelProviderInput");
+const modelIdInput = document.getElementById("modelIdInput");
+const modelBaseUrlInput = document.getElementById("modelBaseUrlInput");
+const modelApiKeyInput = document.getElementById("modelApiKeyInput");
+const modelExtraConfigInput = document.getElementById("modelExtraConfigInput");
+const primaryModelSelect = document.getElementById("primaryModelSelect");
+const saveModelConfigBtn = document.getElementById("saveModelConfigBtn");
+const saveAndSwitchModelBtn = document.getElementById("saveAndSwitchModelBtn");
+const switchModelBtn = document.getElementById("switchModelBtn");
+const clearModelFormBtn = document.getElementById("clearModelFormBtn");
 const workspaceFileCount = document.getElementById("workspaceFileCount");
 const workspaceFileList = document.getElementById("workspaceFileList");
 const workspaceSkillCount = document.getElementById("workspaceSkillCount");
 const workspaceSkillList = document.getElementById("workspaceSkillList");
+const pluginCount = document.getElementById("pluginCount");
+const pluginList = document.getElementById("pluginList");
 const parsedView = document.getElementById("parsedView");
 const parsedHint = document.getElementById("parsedHint");
 const explanationHint = document.getElementById("explanationHint");
@@ -297,6 +313,90 @@ function renderInteractiveList(container, countNode, items, emptyMessage, mapIte
   });
 }
 
+function renderManagedSkillList(items) {
+  workspaceSkillList.innerHTML = "";
+  workspaceSkillCount.textContent = `${items.length} 个`;
+
+  if (!items.length) {
+    workspaceSkillList.innerHTML = "<p class='muted'>当前工作区没有发现技能目录。</p>";
+    return;
+  }
+
+  items.forEach((item) => {
+    const node = interactiveCardTpl.content.firstElementChild.cloneNode(true);
+    node.querySelector("[data-field='title']").textContent = item.title || item.name;
+    node.querySelector("[data-field='path']").textContent = item.path;
+    node.querySelector("[data-field='desc']").textContent = item.description || item.name;
+    node.querySelector("[data-action='open']").addEventListener("click", () => openWorkspaceSkillDetail(item));
+
+    const actions = node.querySelector(".actions") || node.querySelector(".row-head");
+    const uninstallBtn = document.createElement("button");
+    uninstallBtn.className = "btn btn-danger";
+    uninstallBtn.type = "button";
+    uninstallBtn.textContent = "卸载";
+    uninstallBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      uninstallWorkspaceSkill(item);
+    });
+    actions.appendChild(uninstallBtn);
+    workspaceSkillList.appendChild(node);
+  });
+}
+
+function getPluginEntries(config) {
+  const installs = config?.plugins?.installs || {};
+  const allow = Array.isArray(config?.plugins?.allow) ? config.plugins.allow : [];
+  const names = new Set();
+
+  if (installs && typeof installs === "object" && !Array.isArray(installs)) {
+    Object.keys(installs).forEach((name) => names.add(name));
+  }
+  allow.forEach((name) => names.add(name));
+
+  return Array.from(names)
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({
+      name,
+      install: installs?.[name],
+      allowed: allow.includes(name)
+    }));
+}
+
+function renderPluginList(config) {
+  const plugins = getPluginEntries(config);
+  pluginList.innerHTML = "";
+  pluginCount.textContent = `${plugins.length} 个`;
+
+  if (!plugins.length) {
+    pluginList.innerHTML = "<p class='muted'>当前配置没有插件安装记录或白名单条目。</p>";
+    return;
+  }
+
+  plugins.forEach((plugin) => {
+    const node = infoCardTpl.content.firstElementChild.cloneNode(true);
+    const installSummary =
+      plugin.install && typeof plugin.install === "object"
+        ? JSON.stringify(plugin.install)
+        : plugin.install
+          ? String(plugin.install)
+          : "仅白名单";
+    node.querySelector("[data-field='title']").textContent = plugin.name;
+    node.querySelector("[data-field='path']").textContent = plugin.allowed ? "白名单已允许" : "未在白名单";
+    node.querySelector("[data-field='desc']").textContent = installSummary;
+
+    const actions = document.createElement("div");
+    actions.className = "actions item-actions";
+    const uninstallBtn = document.createElement("button");
+    uninstallBtn.className = "btn btn-danger";
+    uninstallBtn.type = "button";
+    uninstallBtn.textContent = "卸载插件";
+    uninstallBtn.addEventListener("click", () => uninstallPlugin(plugin));
+    actions.appendChild(uninstallBtn);
+    node.appendChild(actions);
+    pluginList.appendChild(node);
+  });
+}
+
 function buildExplanationItems(config) {
   if (!config || typeof config !== "object") {
     return [];
@@ -362,6 +462,203 @@ function renderExplanation(config) {
   });
 }
 
+function getModelDefaults(config) {
+  return config?.agents?.defaults || {};
+}
+
+function getModelEntries(config) {
+  const models = getModelDefaults(config).models || {};
+  if (!models || typeof models !== "object" || Array.isArray(models)) {
+    return [];
+  }
+  return Object.entries(models).map(([name, value]) => ({
+    name,
+    config: value && typeof value === "object" && !Array.isArray(value) ? value : {}
+  }));
+}
+
+function getPrimaryModelName(config) {
+  return getModelDefaults(config).model?.primary || "";
+}
+
+function maskSecret(value) {
+  const secret = String(value || "");
+  if (!secret) {
+    return "未设置";
+  }
+  if (secret.length <= 8) {
+    return "已设置";
+  }
+  return `${secret.slice(0, 4)}...${secret.slice(-4)}`;
+}
+
+function pickModelId(modelConfig, fallbackName) {
+  return modelConfig.model || modelConfig.modelId || modelConfig.id || fallbackName;
+}
+
+function pickBaseUrl(modelConfig) {
+  return modelConfig.baseURL || modelConfig.baseUrl || modelConfig.base_url || "";
+}
+
+function pickApiKey(modelConfig) {
+  return modelConfig.apiKey || modelConfig.api_key || "";
+}
+
+function clearModelForm() {
+  modelNameInput.value = "";
+  modelProviderInput.value = "";
+  modelIdInput.value = "";
+  modelBaseUrlInput.value = "";
+  modelApiKeyInput.value = "";
+  modelExtraConfigInput.value = "{}";
+}
+
+function fillModelForm(name, modelConfig) {
+  const extraConfig = { ...(modelConfig || {}) };
+  delete extraConfig.provider;
+  delete extraConfig.model;
+  delete extraConfig.modelId;
+  delete extraConfig.id;
+  delete extraConfig.baseURL;
+  delete extraConfig.baseUrl;
+  delete extraConfig.base_url;
+  delete extraConfig.apiKey;
+  delete extraConfig.api_key;
+
+  modelNameInput.value = name || "";
+  modelProviderInput.value = modelConfig?.provider || "";
+  modelIdInput.value = pickModelId(modelConfig || {}, name || "");
+  modelBaseUrlInput.value = pickBaseUrl(modelConfig || {});
+  modelApiKeyInput.value = "";
+  modelExtraConfigInput.value = `${JSON.stringify(extraConfig, null, 2)}\n`;
+}
+
+function buildModelConfigFromForm(existingConfig = {}) {
+  let extraConfig = {};
+  const extraRaw = String(modelExtraConfigInput.value || "{}").trim();
+  if (extraRaw) {
+    extraConfig = JSON.parse(extraRaw);
+    if (!extraConfig || typeof extraConfig !== "object" || Array.isArray(extraConfig)) {
+      throw new Error("其他配置 JSON 必须是对象");
+    }
+  }
+
+  const nextConfig = { ...extraConfig };
+  const provider = String(modelProviderInput.value || "").trim();
+  const modelId = String(modelIdInput.value || "").trim();
+  const baseUrl = String(modelBaseUrlInput.value || "").trim();
+  const apiKey = String(modelApiKeyInput.value || "").trim();
+
+  if (provider) {
+    nextConfig.provider = provider;
+  }
+  if (modelId) {
+    nextConfig.model = modelId;
+  }
+  if (baseUrl) {
+    nextConfig.baseURL = baseUrl;
+  }
+  if (apiKey) {
+    nextConfig.apiKey = apiKey;
+  } else if (existingConfig.apiKey) {
+    nextConfig.apiKey = existingConfig.apiKey;
+  } else if (existingConfig.api_key) {
+    nextConfig.api_key = existingConfig.api_key;
+  }
+
+  return nextConfig;
+}
+
+function renderModelConfig(config) {
+  const entries = getModelEntries(config);
+  const primaryModel = getPrimaryModelName(config);
+  modelList.innerHTML = "";
+  primaryModelSelect.innerHTML = "";
+  modelCount.textContent = `${entries.length} 个`;
+  modelSummary.textContent = primaryModel ? `当前主模型：${primaryModel}` : "尚未设置主模型";
+
+  if (!entries.length) {
+    modelList.innerHTML = "<p class='muted'>当前配置还没有模型条目。</p>";
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "无可选模型";
+    primaryModelSelect.appendChild(option);
+    clearModelForm();
+    return;
+  }
+
+  entries.forEach(({ name, config: modelConfig }) => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name === primaryModel ? `${name}（当前）` : name;
+    primaryModelSelect.appendChild(option);
+
+    const node = infoCardTpl.content.firstElementChild.cloneNode(true);
+    node.classList.add("model-card");
+    if (name === primaryModel) {
+      node.classList.add("active-model");
+    }
+    node.querySelector("[data-field='title']").textContent = name === primaryModel ? `${name} · 主模型` : name;
+    node.querySelector("[data-field='path']").textContent = pickModelId(modelConfig, name);
+    node.querySelector("[data-field='desc']").textContent =
+      `Provider ${modelConfig.provider || "未设置"}；Base URL ${pickBaseUrl(modelConfig) || "未设置"}；API Key ${maskSecret(pickApiKey(modelConfig))}`;
+    node.addEventListener("click", () => fillModelForm(name, modelConfig));
+    modelList.appendChild(node);
+  });
+
+  primaryModelSelect.value = primaryModel || entries[0].name;
+  const selectedEntry = entries.find((item) => item.name === primaryModelSelect.value) || entries[0];
+  fillModelForm(selectedEntry.name, selectedEntry.config);
+}
+
+function getCurrentModelConfigByName(modelName) {
+  const entries = getModelEntries(state.workspace?.config?.parsed);
+  return entries.find((item) => item.name === modelName)?.config || {};
+}
+
+async function updateModelConfig({ shouldSave, shouldSwitch }) {
+  const payload = getCurrentWorkspacePayload();
+  if (!payload.configPath) {
+    appendLog("请先加载 OpenClaw 配置，再更新模型配置");
+    return;
+  }
+
+  const body = { ...payload };
+  const modelName = String(modelNameInput.value || "").trim();
+
+  if (shouldSave) {
+    if (!modelName) {
+      appendLog("请输入模型名称");
+      return;
+    }
+    body.modelName = modelName;
+    body.modelConfig = buildModelConfigFromForm(getCurrentModelConfigByName(modelName));
+  }
+
+  if (shouldSwitch) {
+    body.primaryModel = shouldSave ? modelName : primaryModelSelect.value;
+    if (!body.primaryModel) {
+      appendLog("请选择要切换的主模型");
+      return;
+    }
+  }
+
+  const result = await request("/api/openclaw/model-config", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+
+  state.workspace = result.result.workspace;
+  renderWorkspace();
+  appendLog(
+    shouldSave && shouldSwitch
+      ? `模型 ${result.result.modelName} 已保存并切换为主模型`
+      : shouldSave
+        ? `模型 ${result.result.modelName} 已保存`
+        : `主模型已切换为 ${result.result.primaryModel}`
+  );
+}
+
 function renderWorkspace() {
   const workspace = state.workspace;
   if (!workspace) {
@@ -375,8 +672,11 @@ function renderWorkspace() {
     configMeta.textContent = "尚未加载配置";
     updateStatusText.textContent = "尚未检查版本";
     configEditor.value = "";
+    clearModelForm();
+    renderModelConfig(null);
+    renderPluginList(null);
     renderInteractiveList(workspaceFileList, workspaceFileCount, [], "尚未读取到工作区关键文件。", (item) => item, () => {});
-    renderInteractiveList(workspaceSkillList, workspaceSkillCount, [], "尚未读取到工作区技能。", (item) => item, () => {});
+    renderManagedSkillList([]);
     renderExplanation(null);
     parsedView.innerHTML = "<p class='muted'>请先从自动发现列表中选择 OpenClaw 配置目录，或手动输入配置目录 / openclaw.json 路径。</p>";
     return;
@@ -408,21 +708,12 @@ function renderWorkspace() {
     openWorkspaceFileDetail
   );
 
-  renderInteractiveList(
-    workspaceSkillList,
-    workspaceSkillCount,
-    workspace.workspace?.skills || [],
-    "当前工作区没有发现技能目录。",
-    (item) => ({
-      title: item.title || item.name,
-      path: item.path,
-      desc: item.description || item.name
-    }),
-    openWorkspaceSkillDetail
-  );
+  renderManagedSkillList(workspace.workspace?.skills || []);
 
   renderParsedObject(workspace.config.parsed);
   renderExplanation(workspace.config.parsed);
+  renderModelConfig(workspace.config.parsed);
+  renderPluginList(workspace.config.parsed);
 }
 
 function renderUpdateStatus(status) {
@@ -696,6 +987,59 @@ async function updateLocalConfigVersion() {
   state.workspace = result.result.workspace;
   renderWorkspace();
   appendLog(`本地配置版本已更新为 ${result.result.version}`);
+}
+
+async function uninstallWorkspaceSkill(skillItem) {
+  const payload = getCurrentWorkspacePayload();
+  if (!payload.configPath) {
+    appendLog("请先加载 OpenClaw 配置，再卸载技能");
+    return;
+  }
+
+  const skillName = skillItem.title || skillItem.name || skillItem.path;
+  const confirmed = window.confirm(`将删除技能目录：\n${skillItem.path}\n\n是否继续卸载 ${skillName}？`);
+  if (!confirmed) {
+    appendLog(`已取消卸载技能: ${skillName}`);
+    return;
+  }
+
+  const result = await request("/api/workspace/skill-uninstall", {
+    method: "POST",
+    body: JSON.stringify({
+      ...payload,
+      skillPath: skillItem.path
+    })
+  });
+
+  state.workspace = result.result.workspace;
+  renderWorkspace();
+  appendLog(`技能已卸载: ${skillName}`);
+}
+
+async function uninstallPlugin(plugin) {
+  const payload = getCurrentWorkspacePayload();
+  if (!payload.configPath) {
+    appendLog("请先加载 OpenClaw 配置，再卸载插件");
+    return;
+  }
+
+  const confirmed = window.confirm(`将从 openclaw.json 中移除插件：\n${plugin.name}\n\n是否继续？`);
+  if (!confirmed) {
+    appendLog(`已取消卸载插件: ${plugin.name}`);
+    return;
+  }
+
+  const result = await request("/api/openclaw/plugin-uninstall", {
+    method: "POST",
+    body: JSON.stringify({
+      ...payload,
+      pluginName: plugin.name
+    })
+  });
+
+  state.workspace = result.result.workspace;
+  renderWorkspace();
+  appendLog(`插件已卸载: ${result.result.pluginName}`);
 }
 
 function openWorkspaceDetailModal() {
@@ -1006,6 +1350,42 @@ runUpdateBtn.addEventListener("click", async () => {
     appendUpdateModalLog(`更新失败: ${error.message}`);
     finishUpdateModal("更新失败", 100);
   }
+});
+
+saveModelConfigBtn.addEventListener("click", async () => {
+  try {
+    await updateModelConfig({ shouldSave: true, shouldSwitch: false });
+  } catch (error) {
+    appendLog(`保存模型配置失败: ${error.message}`);
+  }
+});
+
+saveAndSwitchModelBtn.addEventListener("click", async () => {
+  try {
+    await updateModelConfig({ shouldSave: true, shouldSwitch: true });
+  } catch (error) {
+    appendLog(`保存并切换模型失败: ${error.message}`);
+  }
+});
+
+switchModelBtn.addEventListener("click", async () => {
+  try {
+    await updateModelConfig({ shouldSave: false, shouldSwitch: true });
+  } catch (error) {
+    appendLog(`切换主模型失败: ${error.message}`);
+  }
+});
+
+clearModelFormBtn.addEventListener("click", () => {
+  clearModelForm();
+});
+
+primaryModelSelect.addEventListener("change", () => {
+  const selectedName = primaryModelSelect.value;
+  if (!selectedName) {
+    return;
+  }
+  fillModelForm(selectedName, getCurrentModelConfigByName(selectedName));
 });
 
 saveBtn.addEventListener("click", async () => {

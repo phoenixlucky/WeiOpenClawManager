@@ -1,5 +1,24 @@
 # 变更记录
 
+## 1.6.0
+
+### 模型配置
+
+- 增加模型配置面板，支持新增和编辑 `agents.defaults.models`
+- 支持切换 `agents.defaults.model.primary`
+- 新增 `POST /api/openclaw/model-config` 接口
+
+### 技能与插件
+
+- 支持卸载工作区技能，删除 `workspace/skills` 下对应技能目录
+- 支持卸载插件，从 `plugins.installs` 和 `plugins.allow` 中移除
+- 新增 `POST /api/workspace/skill-uninstall` 和 `POST /api/openclaw/plugin-uninstall` 接口
+
+### 打包与版本
+
+- 项目版本号从 `1.5.0` 升级到 `1.6.0`
+- 清理无效的 `dist` 打包输出，避免保留旧版本或损坏的安装产物
+
 ## 1.5.0
 
 ### ClawHub 功能

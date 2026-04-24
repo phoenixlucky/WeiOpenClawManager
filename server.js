@@ -1138,6 +1138,68 @@ async function saveConfig({ configPath, content }) {
   return loadWorkspace({ configPath: targetPath });
 }
 
+function ensurePlainObject(value, fallback = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return fallback;
+  }
+  return value;
+}
+
+function normalizeModelName(value) {
+  const modelName = String(value || "").trim();
+  if (!modelName) {
+    throw new Error("模型名称不能为空");
+  }
+  return modelName;
+}
+
+async function updateModelConfig({ rootPath, configPath, modelName, modelConfig, primaryModel }) {
+  const resolved = await resolveWorkspacePaths({ rootPath, configPath });
+  const targetPath = resolved.configPath;
+  const fileExists = await pathExists(targetPath);
+
+  let parsed = {};
+  if (fileExists) {
+    const loaded = await readMaybeJson(targetPath);
+    if (loaded.parsed) {
+      parsed = loaded.parsed;
+    } else if (String(loaded.raw || "").trim()) {
+      throw new Error("当前 openclaw.json 不是有效 JSON，无法更新模型配置");
+    }
+  }
+
+  parsed = ensurePlainObject(parsed);
+  parsed.agents = ensurePlainObject(parsed.agents);
+  parsed.agents.defaults = ensurePlainObject(parsed.agents.defaults);
+  parsed.agents.defaults.model = ensurePlainObject(parsed.agents.defaults.model);
+  parsed.agents.defaults.models = ensurePlainObject(parsed.agents.defaults.models);
+
+  let updatedModelName = "";
+  if (modelName !== undefined && modelName !== null && String(modelName).trim()) {
+    updatedModelName = normalizeModelName(modelName);
+    parsed.agents.defaults.models[updatedModelName] = ensurePlainObject(modelConfig);
+  }
+
+  if (primaryModel !== undefined && primaryModel !== null && String(primaryModel).trim()) {
+    const targetPrimary = normalizeModelName(primaryModel);
+    if (!parsed.agents.defaults.models[targetPrimary]) {
+      throw new Error(`模型 ${targetPrimary} 不存在，无法切换`);
+    }
+    parsed.agents.defaults.model.primary = targetPrimary;
+  } else if (updatedModelName && !parsed.agents.defaults.model.primary) {
+    parsed.agents.defaults.model.primary = updatedModelName;
+  }
+
+  const content = `${JSON.stringify(parsed, null, 2)}\n`;
+  const workspace = await saveConfig({ configPath: targetPath, content });
+
+  return {
+    modelName: updatedModelName || parsed.agents.defaults.model.primary || "",
+    primaryModel: parsed.agents.defaults.model.primary || "",
+    workspace
+  };
+}
+
 async function exportAllConfig({ rootPath, configPath }) {
   const workspace = await getWorkspaceContext({ rootPath, configPath });
   const workspacePath = workspace.workspace.path;
@@ -1357,6 +1419,65 @@ async function updateSkillDetail({ rootPath, configPath, skillPath, metaRaw, ski
   return getSkillDetail({ rootPath, configPath, skillPath: targetPath });
 }
 
+async function uninstallSkill({ rootPath, configPath, skillPath }) {
+  const workspace = await getWorkspaceContext({ rootPath, configPath });
+  const skillsRoot = path.join(workspace.workspace.path, "skills");
+  const targetPath = ensurePathInside(skillsRoot, skillPath, "工作区技能");
+  const targetStat = await statSafe(targetPath);
+  if (!targetStat || !targetStat.isDirectory()) {
+    throw new Error("技能目录不存在");
+  }
+
+  await fs.rm(targetPath, { recursive: true, force: true });
+
+  return {
+    skillPath: targetPath,
+    workspace: await loadWorkspace({ rootPath, configPath })
+  };
+}
+
+async function uninstallPlugin({ rootPath, configPath, pluginName }) {
+  const targetPluginName = String(pluginName || "").trim();
+  if (!targetPluginName) {
+    throw new Error("插件名称不能为空");
+  }
+
+  const resolved = await resolveWorkspacePaths({ rootPath, configPath });
+  const targetPath = resolved.configPath;
+  const loaded = await readMaybeJson(targetPath);
+  if (!loaded.parsed) {
+    throw new Error("当前 openclaw.json 不是有效 JSON，无法卸载插件");
+  }
+
+  const parsed = ensurePlainObject(loaded.parsed);
+  parsed.plugins = ensurePlainObject(parsed.plugins);
+  parsed.plugins.installs = ensurePlainObject(parsed.plugins.installs);
+
+  const hadInstall = Object.prototype.hasOwnProperty.call(parsed.plugins.installs, targetPluginName);
+  delete parsed.plugins.installs[targetPluginName];
+
+  let removedFromAllow = false;
+  if (Array.isArray(parsed.plugins.allow)) {
+    const beforeLength = parsed.plugins.allow.length;
+    parsed.plugins.allow = parsed.plugins.allow.filter((item) => item !== targetPluginName);
+    removedFromAllow = parsed.plugins.allow.length !== beforeLength;
+  }
+
+  if (!hadInstall && !removedFromAllow) {
+    throw new Error(`未找到插件 ${targetPluginName}`);
+  }
+
+  const content = `${JSON.stringify(parsed, null, 2)}\n`;
+  const workspace = await saveConfig({ configPath: targetPath, content });
+
+  return {
+    pluginName: targetPluginName,
+    removedFromInstalls: hadInstall,
+    removedFromAllow,
+    workspace
+  };
+}
+
 async function updateLocalConfigVersion({ rootPath, configPath }) {
   const resolved = await resolveWorkspacePaths({ rootPath, configPath });
   const targetPath = resolved.configPath;
@@ -1458,6 +1579,12 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { ok: true, workspace });
   }
 
+  if (req.method === "POST" && pathname === "/api/openclaw/model-config") {
+    const payload = await readJsonBody(req);
+    const result = await updateModelConfig(payload);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
   if (req.method === "GET" && pathname === "/api/openclaw/update-status") {
     const status = await getUpdateStatus();
     return sendJson(res, 200, status);
@@ -1524,6 +1651,18 @@ async function handleApi(req, res, pathname) {
   if (req.method === "POST" && pathname === "/api/workspace/skill-update") {
     const payload = await readJsonBody(req);
     const result = await updateSkillDetail(payload);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/workspace/skill-uninstall") {
+    const payload = await readJsonBody(req);
+    const result = await uninstallSkill(payload);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/openclaw/plugin-uninstall") {
+    const payload = await readJsonBody(req);
+    const result = await uninstallPlugin(payload);
     return sendJson(res, 200, { ok: true, result });
   }
 

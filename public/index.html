@@ -107,6 +107,61 @@
         </div>
       </section>
 
+      <section class="panel model-panel">
+        <div class="row-head">
+          <div>
+            <h2>模型配置</h2>
+            <p id="modelSummary" class="meta">尚未加载模型配置</p>
+          </div>
+          <span id="modelCount" class="muted">0 个</span>
+        </div>
+        <div class="model-layout">
+          <div class="stack">
+            <div id="modelList" class="parsed-view"></div>
+          </div>
+          <div class="model-editor">
+            <div class="form-grid">
+              <label>
+                模型名称
+                <input id="modelNameInput" placeholder="例如 gpt-5.4" />
+              </label>
+              <label>
+                Provider
+                <input id="modelProviderInput" placeholder="例如 openai" />
+              </label>
+              <label>
+                Model ID
+                <input id="modelIdInput" placeholder="例如 gpt-5.4" />
+              </label>
+              <label>
+                Base URL
+                <input id="modelBaseUrlInput" placeholder="可选" />
+              </label>
+              <label class="form-wide">
+                API Key
+                <input id="modelApiKeyInput" type="password" placeholder="留空则保留已有值" />
+              </label>
+            </div>
+            <label class="extra-config-label">
+              其他配置 JSON
+              <textarea id="modelExtraConfigInput" class="mini-editor" spellcheck="false">{}</textarea>
+            </label>
+            <div class="model-actions">
+              <label>
+                当前主模型
+                <select id="primaryModelSelect"></select>
+              </label>
+              <div class="actions">
+                <button id="saveModelConfigBtn" class="btn" type="button">保存模型</button>
+                <button id="saveAndSwitchModelBtn" class="btn btn-outline" type="button">保存并切换</button>
+                <button id="switchModelBtn" class="btn btn-outline" type="button">切换主模型</button>
+                <button id="clearModelFormBtn" class="btn btn-ghost" type="button">清空表单</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="panel grid-2">
         <div class="stack">
           <div class="row-head">
@@ -123,6 +178,17 @@
           </div>
           <div id="workspaceSkillList" class="parsed-view"></div>
         </div>
+      </section>
+
+      <section class="panel">
+        <div class="row-head">
+          <div>
+            <h2>插件卸载</h2>
+            <p class="meta">从 openclaw.json 的插件安装记录和白名单中移除。</p>
+          </div>
+          <span id="pluginCount" class="muted">0 个</span>
+        </div>
+        <div id="pluginList" class="parsed-view plugin-list"></div>
       </section>
 
       <section class="panel grid-2">

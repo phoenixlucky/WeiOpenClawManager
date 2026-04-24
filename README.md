@@ -14,7 +14,10 @@
 - 展示工作区已安装技能
 - 支持点击工作区文件，弹窗查看并直接修改保存
 - 支持点击工作区技能，弹窗查询详情并更新 `_meta.json` / `SKILL.md`
+- 支持卸载工作区技能，删除 `workspace/skills` 下对应技能目录
+- 支持卸载插件，从 `openclaw.json` 的 `plugins.installs` 和白名单中移除
 - 提供结构化预览和中文说明
+- 提供模型配置面板，支持新增/编辑模型并切换 `agents.defaults.model.primary`
 - 检查 OpenClaw 最新版本
 - 执行全局更新：`npm i -g openclaw@latest`
 - 一键启动全局 `openclaw gateway`
@@ -49,7 +52,9 @@ npm run start:web
 - 配置入口：快速加载 OpenClaw 配置目录或 `openclaw.json`
 - 当前工作区：查看版本、根目录、配置文件位置
 - 工作区文件：显示常用关键文件，支持点击弹窗查看和修改
-- 工作区技能：显示 `workspace/skills` 下的技能目录，支持查询详情和更新
+- 工作区技能：显示 `workspace/skills` 下的技能目录，支持查询详情、更新和卸载
+- 插件卸载：显示 `plugins.installs` 与 `plugins.allow` 中的插件，支持从配置中移除
+- 模型配置：读取 `agents.defaults.models`，支持编辑模型 Provider、Model ID、Base URL、API Key 和其他 JSON 配置，并切换主模型
 - 结构化预览：按 JSON 顶层字段查看配置
 - 中文解析说明：按模型、网关、插件、渠道、工作区等维度输出摘要
 - 原始配置内容：直接编辑并保存 `openclaw.json`
@@ -82,6 +87,7 @@ npm i -g openclaw@latest
 - `GET /api/discovery`：读取标准 OpenClaw 配置目录候选
 - `POST /api/openclaw/load`：加载配置目录和工作区信息
 - `POST /api/openclaw/save`：保存 `openclaw.json`
+- `POST /api/openclaw/model-config`：新增/更新模型配置，并可切换主模型
 - `GET /api/openclaw/update-status`：检查当前版本与最新版本
 - `POST /api/openclaw/update`：执行全局更新
 - `POST /api/openclaw/launch`：一键启动 `openclaw gateway`
@@ -91,6 +97,8 @@ npm i -g openclaw@latest
 - `POST /api/workspace/file-save`：保存工作区文件修改
 - `POST /api/workspace/skill-detail`：查询工作区技能详情
 - `POST /api/workspace/skill-update`：更新工作区技能元数据和文档
+- `POST /api/workspace/skill-uninstall`：卸载工作区技能目录
+- `POST /api/openclaw/plugin-uninstall`：从配置中卸载插件
 
 ## 桌面壳说明
 
@@ -115,7 +123,7 @@ npm run build:win
 3. 产物位置：
 
 ```text
-dist/electron/WeiOpenClawManager-Setup-1.5.0.exe
+dist/electron/WeiOpenClawManager-Setup-1.6.0.exe
 ```
 
 ## 打包方式
@@ -124,7 +132,7 @@ dist/electron/WeiOpenClawManager-Setup-1.5.0.exe
 - 打包目标为 `NSIS` 标准安装程序，不再使用旧的 Node SEA / IExpress 方案
 - 打包命令为 `npm run build:win`
 - 安装包命名格式为 `WeiOpenClawManager-Setup-${version}.exe`
-- 当前版本号为 `1.5.0`
+- 当前版本号为 `1.6.0`
 - 默认输出目录为 `dist/electron`
 - 安装模式为“所有用户安装”
 - 默认安装目录为 `D:\Program Files\OpenClawManager`
