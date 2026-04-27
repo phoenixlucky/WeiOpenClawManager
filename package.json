@@ -1,6 +1,6 @@
 {
   "name": "WeiOpenClawManager",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "WeiLong OpenClaw config manager desktop client",
   "main": "electron-main.js",
   "scripts": {

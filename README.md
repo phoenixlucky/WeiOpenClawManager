@@ -18,9 +18,11 @@
 - 支持卸载插件，从 `openclaw.json` 的 `plugins.installs` 和白名单中移除
 - 提供结构化预览和中文说明
 - 提供模型配置面板，支持新增/编辑模型并切换 `agents.defaults.model.primary`
+- 支持通过 `openclaw onboard --non-interactive` 初始化新模型配置
+- 提供渠道配置面板，支持新增/编辑 `channels.<provider>` 常用字段
 - 检查 OpenClaw 最新版本
 - 执行全局更新：`npm i -g openclaw@latest`
-- 一键启动全局 `openclaw gateway`
+- 一键启动全局 `openclaw gateway`，启动前自动执行 `openclaw gateway stop`、结束已注册的 Windows Gateway 任务，并清理占用 18789 的 OpenClaw Gateway 进程
 - 一键打开 ClawHub 官网：`https://clawhub.ai/`
 - 支持输入 ClawHub 包名并执行：`clawhub install <包名>`
 - 通过弹窗实时查看 ClawHub 安装输出和进度
@@ -55,12 +57,14 @@ npm run start:web
 - 工作区技能：显示 `workspace/skills` 下的技能目录，支持查询详情、更新和卸载
 - 插件卸载：显示 `plugins.installs` 与 `plugins.allow` 中的插件，支持从配置中移除
 - 模型配置：读取 `agents.defaults.models`，支持编辑模型 Provider、Model ID、Base URL、API Key 和其他 JSON 配置，并切换主模型
+- onboard 初始化：使用模型表单中的 Provider、Model ID、Base URL、API Key 调用 `openclaw onboard --non-interactive`
+- 渠道配置：读取 `channels`，支持编辑 enabled、dmPolicy、allowFrom、groupPolicy、groupAllowFrom、defaultAccount 和其他 JSON 配置
 - 结构化预览：按 JSON 顶层字段查看配置
 - 中文解析说明：按模型、网关、插件、渠道、工作区等维度输出摘要
 - 原始配置内容：直接编辑并保存 `openclaw.json`
 - OpenClaw 更新：检查新版本并执行更新
 - ClawHub 安装：输入包名后执行 `clawhub install`，并在弹窗查看实时日志
-- 一键启动：直接拉起本机全局 `openclaw gateway`
+- 一键启动：先自动停止已运行的 Gateway，再拉起本机全局 `openclaw gateway`
 - 本地配置版本：一键将 `meta.lastTouchedVersion` 与 `wizard.lastRunVersion` 刷新到最新
 
 ## 架构
@@ -88,9 +92,11 @@ npm i -g openclaw@latest
 - `POST /api/openclaw/load`：加载配置目录和工作区信息
 - `POST /api/openclaw/save`：保存 `openclaw.json`
 - `POST /api/openclaw/model-config`：新增/更新模型配置，并可切换主模型
+- `POST /api/openclaw/onboard-model`：通过 `openclaw onboard --non-interactive` 初始化模型配置，以流式日志返回执行进度
+- `POST /api/openclaw/channel-config`：新增/更新渠道配置
 - `GET /api/openclaw/update-status`：检查当前版本与最新版本
 - `POST /api/openclaw/update`：执行全局更新
-- `POST /api/openclaw/launch`：一键启动 `openclaw gateway`
+- `POST /api/openclaw/launch`：自动修复已有 Gateway 进程占用后，一键启动 `openclaw gateway`
 - `POST /api/clawhub/install`：执行 `clawhub install <包名>`，以流式日志返回安装进度
 - `POST /api/openclaw/update-local-version`：一键更新本地配置版本到最新 OpenClaw 版本
 - `POST /api/workspace/file-detail`：读取工作区文件详情
@@ -123,7 +129,7 @@ npm run build:win
 3. 产物位置：
 
 ```text
-dist/electron/WeiOpenClawManager-Setup-1.6.0.exe
+dist/electron/WeiOpenClawManager-Setup-1.7.0.exe
 ```
 
 ## 打包方式
@@ -132,7 +138,7 @@ dist/electron/WeiOpenClawManager-Setup-1.6.0.exe
 - 打包目标为 `NSIS` 标准安装程序，不再使用旧的 Node SEA / IExpress 方案
 - 打包命令为 `npm run build:win`
 - 安装包命名格式为 `WeiOpenClawManager-Setup-${version}.exe`
-- 当前版本号为 `1.6.0`
+- 当前版本号为 `1.7.0`
 - 默认输出目录为 `dist/electron`
 - 安装模式为“所有用户安装”
 - 默认安装目录为 `D:\Program Files\OpenClawManager`

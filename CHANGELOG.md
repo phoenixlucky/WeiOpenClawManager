@@ -1,5 +1,28 @@
 # 变更记录
 
+## 1.7.0
+
+### 模型配置
+
+- 支持通过 `openclaw onboard --non-interactive` 初始化新模型配置
+- 新增 `POST /api/openclaw/onboard-model` 流式初始化接口
+
+### OpenClaw 启动
+
+- 一键启动前自动执行 `openclaw gateway stop`
+- Windows 下额外尝试结束 `OpenClaw Gateway` 注册任务，修复 18789 端口被已有 Gateway 占用后无法启动的问题
+- 如果 18789 仍被 `openclaw gateway` 进程监听，会自动终止该进程后再次启动
+
+### 渠道配置
+
+- 增加渠道配置面板，支持新增和编辑 `channels.<provider>` 常用字段
+- 支持编辑 `enabled`、`dmPolicy`、`allowFrom`、`groupPolicy`、`groupAllowFrom`、`defaultAccount` 和其他 JSON 配置
+- 新增 `POST /api/openclaw/channel-config` 接口
+
+### 打包与版本
+
+- 项目版本号从 `1.6.0` 升级到 `1.7.0`
+
 ## 1.6.0
 
 ### 模型配置

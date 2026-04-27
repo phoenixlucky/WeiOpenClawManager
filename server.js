@@ -250,6 +250,29 @@ function spawnDetached(command, args, options = {}) {
   child.unref();
 }
 
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function runCommandResult(command, args, options = {}) {
+  try {
+    const result = await runCommand(command, args, options);
+    return {
+      ok: true,
+      stdout: result.stdout || "",
+      stderr: result.stderr || ""
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: "",
+      stderr: error.message || String(error)
+    };
+  }
+}
+
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     https
@@ -756,6 +779,260 @@ async function resolveClawHubInstallInvocation(packageName) {
   };
 }
 
+async function resolveOpenClawInvocation(subcommand, extraArgs = []) {
+  const shimPath = findOpenClawCmdShim();
+  if (shimPath && isStableOpenClawCommandPath(shimPath)) {
+    const target = resolveCmdShimTarget(shimPath);
+    if (target && !fsSync.existsSync(target)) {
+      throw new Error(`OpenClaw 命令损坏，目标文件不存在 (${target})`);
+    }
+
+    return {
+      command: "cmd.exe",
+      args: ["/c", shimPath, subcommand, ...extraArgs],
+      source: "openclaw.cmd",
+      displayCommand: `${shimPath} ${subcommand} ${extraArgs.join(" ")}`.trim()
+    };
+  }
+
+  const pathCommand = await findOpenClawCmdFromPath();
+  if (pathCommand) {
+    return {
+      command: "cmd.exe",
+      args: ["/c", pathCommand, subcommand, ...extraArgs],
+      source: "PATH application",
+      displayCommand: `${pathCommand} ${subcommand} ${extraArgs.join(" ")}`.trim()
+    };
+  }
+
+  throw new Error("未找到可用的 OpenClaw 命令，请先确认已正确安装 openclaw.cmd");
+}
+
+function normalizeOnboardProvider(value) {
+  return String(value || "").trim().toLowerCase().replaceAll("_", "-");
+}
+
+function buildOnboardModelArgs(payload) {
+  const provider = normalizeOnboardProvider(payload?.provider);
+  const modelId = String(payload?.modelId || "").trim();
+  const baseUrl = String(payload?.baseUrl || "").trim();
+  const apiKey = String(payload?.apiKey || "").trim();
+  const extraEnv = {};
+  const args = ["--non-interactive", "--accept-risk", "--skip-health"];
+
+  if (!modelId) {
+    throw new Error("请先填写 Model ID");
+  }
+
+  if (provider === "ollama") {
+    args.push("--auth-choice", "ollama");
+    if (baseUrl) {
+      args.push("--custom-base-url", baseUrl);
+    }
+    args.push("--custom-model-id", modelId);
+    return { args, extraEnv };
+  }
+
+  if (provider === "lmstudio" || provider === "lm-studio") {
+    args.push("--auth-choice", "lmstudio");
+    if (baseUrl) {
+      args.push("--custom-base-url", baseUrl);
+    }
+    args.push("--custom-model-id", modelId);
+    if (apiKey) {
+      args.push("--lmstudio-api-key", apiKey);
+    }
+    return { args, extraEnv };
+  }
+
+  if ((provider === "openai" || provider === "openai-api-key") && !baseUrl) {
+    args.push("--auth-choice", "openai-api-key");
+    if (apiKey) {
+      args.push("--openai-api-key", apiKey);
+      extraEnv.OPENAI_API_KEY = apiKey;
+    }
+    return { args, extraEnv };
+  }
+
+  if ((provider === "mistral" || provider === "mistral-api-key") && !baseUrl) {
+    args.push("--auth-choice", "mistral-api-key");
+    if (apiKey) {
+      args.push("--mistral-api-key", apiKey);
+    }
+    return { args, extraEnv };
+  }
+
+  if (!baseUrl) {
+    throw new Error("该 Provider 需要填写 Base URL；如果使用官方 OpenAI，请将 Provider 填为 openai");
+  }
+
+  args.push(
+    "--auth-choice",
+    "custom-api-key",
+    "--custom-base-url",
+    baseUrl,
+    "--custom-model-id",
+    modelId,
+    "--secret-input-mode",
+    "plaintext",
+    "--custom-compatibility",
+    provider === "anthropic" ? "anthropic" : "openai"
+  );
+
+  if (apiKey) {
+    extraEnv.CUSTOM_API_KEY = apiKey;
+  }
+
+  return { args, extraEnv };
+}
+
+function redactCommandText(text, secrets = []) {
+  let redacted = String(text || "");
+  for (const secret of secrets) {
+    if (!secret) {
+      continue;
+    }
+    redacted = redacted.split(secret).join("***");
+  }
+  return redacted;
+}
+
+async function streamOpenClawOnboard(res, payload) {
+  createStreamingResponse(res);
+
+  let args;
+  let extraEnv;
+  try {
+    const built = buildOnboardModelArgs(payload);
+    args = built.args;
+    extraEnv = built.extraEnv;
+  } catch (error) {
+    writeStreamEvent(res, {
+      type: "error",
+      progress: 100,
+      message: error.message || "onboard 参数无效"
+    });
+    res.end();
+    return;
+  }
+
+  const cwd = normalizePath(payload?.rootPath) || getDefaultOpenClawRoot() || WORK_DIR;
+  const secrets = [String(payload?.apiKey || "").trim()].filter(Boolean);
+  writeStreamEvent(res, {
+    type: "start",
+    progress: 8,
+    message: "准备通过 openclaw onboard 初始化模型配置",
+    cwd
+  });
+
+  let invocation;
+  try {
+    invocation = await resolveOpenClawInvocation("onboard", args);
+  } catch (error) {
+    writeStreamEvent(res, {
+      type: "error",
+      progress: 100,
+      message: error.message || "无法解析 OpenClaw onboard 命令"
+    });
+    res.end();
+    return;
+  }
+
+  writeStreamEvent(res, {
+    type: "resolved",
+    progress: 16,
+    message: `开始执行 ${redactCommandText(invocation.displayCommand, secrets)}`,
+    source: invocation.source
+  });
+
+  const child = spawn(invocation.command, invocation.args, {
+    cwd,
+    env: { ...process.env, ...extraEnv },
+    shell: false
+  });
+
+  let lineCount = 0;
+  let combinedOutput = "";
+  let stdoutBuffer = "";
+  let stderrBuffer = "";
+  let settled = false;
+
+  const emitLine = (kind, line) => {
+    const content = redactCommandText(String(line || "").trim(), secrets);
+    if (!content) {
+      return;
+    }
+
+    lineCount += 1;
+    combinedOutput += `${content}\n`;
+    const progress = Math.min(92, 16 + lineCount * 6);
+    writeStreamEvent(res, {
+      type: "log",
+      channel: kind,
+      progress,
+      message: content
+    });
+  };
+
+  const consumeBuffer = (kind, chunk, carry) => {
+    const merged = `${carry}${String(chunk || "")}`;
+    const lines = merged.split(/\r?\n/);
+    const nextCarry = lines.pop() || "";
+    lines.forEach((line) => emitLine(kind, line));
+    return nextCarry;
+  };
+
+  child.stdout.on("data", (chunk) => {
+    stdoutBuffer = consumeBuffer("stdout", chunk, stdoutBuffer);
+  });
+
+  child.stderr.on("data", (chunk) => {
+    stderrBuffer = consumeBuffer("stderr", chunk, stderrBuffer);
+  });
+
+  child.on("error", (error) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    writeStreamEvent(res, {
+      type: "error",
+      progress: 100,
+      message: error.message || "OpenClaw onboard 进程启动失败"
+    });
+    res.end();
+  });
+
+  child.on("close", (code) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    emitLine("stdout", stdoutBuffer);
+    emitLine("stderr", stderrBuffer);
+
+    if (code === 0) {
+      writeStreamEvent(res, {
+        type: "complete",
+        progress: 100,
+        message: "OpenClaw onboard 初始化完成",
+        output: combinedOutput.trim(),
+        code: 0
+      });
+      res.end();
+      return;
+    }
+
+    writeStreamEvent(res, {
+      type: "error",
+      progress: 100,
+      message: combinedOutput.trim() || `OpenClaw onboard 失败，退出码 ${code}`,
+      code
+    });
+    res.end();
+  });
+}
+
 async function streamClawHubInstall(res, payload) {
   createStreamingResponse(res);
 
@@ -898,8 +1175,59 @@ async function streamClawHubInstall(res, payload) {
   });
 }
 
-async function launchOpenClaw(rootPath) {
+async function stopOpenClawGateway(cwd) {
+  const steps = [];
+
+  try {
+    const stopInvocation = await resolveOpenClawInvocation("gateway", ["stop"]);
+    const stopped = await runCommandResult(stopInvocation.command, stopInvocation.args, { cwd });
+    steps.push({
+      action: "openclaw gateway stop",
+      ok: stopped.ok,
+      output: stopped.stdout || stopped.stderr || (stopped.ok ? "stopped" : "")
+    });
+  } catch (error) {
+    steps.push({
+      action: "openclaw gateway stop",
+      ok: false,
+      output: error.message || "无法执行 openclaw gateway stop"
+    });
+  }
+
+  if (process.platform === "win32") {
+    const endedTask = await runCommandResult("schtasks.exe", ["/End", "/TN", "OpenClaw Gateway"], { cwd });
+    steps.push({
+      action: 'schtasks /End /TN "OpenClaw Gateway"',
+      ok: endedTask.ok,
+      output: endedTask.stdout || endedTask.stderr || (endedTask.ok ? "task ended" : "")
+    });
+
+    const killedPortOwner = await runCommandResult(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$items = Get-NetTCPConnection -LocalPort 18789 -State Listen -ErrorAction SilentlyContinue; foreach ($item in $items) { $proc = Get-CimInstance Win32_Process -Filter \"ProcessId=$($item.OwningProcess)\" -ErrorAction SilentlyContinue; if ($proc -and $proc.CommandLine -match 'openclaw' -and $proc.CommandLine -match 'gateway') { Stop-Process -Id $item.OwningProcess -Force; Write-Output \"stopped pid $($item.OwningProcess)\" } }"
+      ],
+      { cwd }
+    );
+    steps.push({
+      action: "stop 18789 openclaw gateway process",
+      ok: killedPortOwner.ok,
+      output: killedPortOwner.stdout || killedPortOwner.stderr || (killedPortOwner.ok ? "no matching process" : "")
+    });
+  }
+
+  await wait(1200);
+  return steps;
+}
+
+async function launchOpenClaw(rootPath, options = {}) {
   const cwd = normalizePath(rootPath) || getDefaultOpenClawRoot() || WORK_DIR;
+  const repairSteps = options.autoRepair === false ? [] : await stopOpenClawGateway(cwd);
   const shimPath = findOpenClawCmdShim();
 
   if (shimPath && isStableOpenClawCommandPath(shimPath)) {
@@ -912,7 +1240,8 @@ async function launchOpenClaw(rootPath) {
     return {
       cwd,
       command: `${shimPath} gateway`,
-      source: "openclaw.cmd"
+      source: "openclaw.cmd",
+      repairSteps
     };
   }
 
@@ -922,7 +1251,8 @@ async function launchOpenClaw(rootPath) {
     return {
       cwd,
       command: `${pathCommand} gateway`,
-      source: "PATH application"
+      source: "PATH application",
+      repairSteps
     };
   }
 
@@ -1196,6 +1526,46 @@ async function updateModelConfig({ rootPath, configPath, modelName, modelConfig,
   return {
     modelName: updatedModelName || parsed.agents.defaults.model.primary || "",
     primaryModel: parsed.agents.defaults.model.primary || "",
+    workspace
+  };
+}
+
+function normalizeChannelName(value) {
+  const channelName = String(value || "").trim().toLowerCase();
+  if (!channelName) {
+    throw new Error("渠道名称不能为空");
+  }
+  if (!/^[a-z0-9._-]+$/.test(channelName)) {
+    throw new Error("渠道名称仅支持小写字母、数字以及 . _ -");
+  }
+  return channelName;
+}
+
+async function updateChannelConfig({ rootPath, configPath, channelName, channelConfig }) {
+  const resolved = await resolveWorkspacePaths({ rootPath, configPath });
+  const targetPath = resolved.configPath;
+  const fileExists = await pathExists(targetPath);
+  const targetChannelName = normalizeChannelName(channelName);
+
+  let parsed = {};
+  if (fileExists) {
+    const loaded = await readMaybeJson(targetPath);
+    if (loaded.parsed) {
+      parsed = loaded.parsed;
+    } else if (String(loaded.raw || "").trim()) {
+      throw new Error("当前 openclaw.json 不是有效 JSON，无法更新渠道配置");
+    }
+  }
+
+  parsed = ensurePlainObject(parsed);
+  parsed.channels = ensurePlainObject(parsed.channels);
+  parsed.channels[targetChannelName] = ensurePlainObject(channelConfig);
+
+  const content = `${JSON.stringify(parsed, null, 2)}\n`;
+  const workspace = await saveConfig({ configPath: targetPath, content });
+
+  return {
+    channelName: targetChannelName,
     workspace
   };
 }
@@ -1585,6 +1955,18 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { ok: true, result });
   }
 
+  if (req.method === "POST" && pathname === "/api/openclaw/channel-config") {
+    const payload = await readJsonBody(req);
+    const result = await updateChannelConfig(payload);
+    return sendJson(res, 200, { ok: true, result });
+  }
+
+  if (req.method === "POST" && pathname === "/api/openclaw/onboard-model") {
+    const payload = await readJsonBody(req);
+    await streamOpenClawOnboard(res, payload);
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/api/openclaw/update-status") {
     const status = await getUpdateStatus();
     return sendJson(res, 200, status);
@@ -1597,7 +1979,7 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "POST" && pathname === "/api/openclaw/launch") {
     const payload = await readJsonBody(req);
-    const result = await launchOpenClaw(payload.rootPath);
+    const result = await launchOpenClaw(payload.rootPath, { autoRepair: payload.autoRepair !== false });
     return sendJson(res, 200, { ok: true, result });
   }
 

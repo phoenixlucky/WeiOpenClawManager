@@ -42,8 +42,22 @@ const modelExtraConfigInput = document.getElementById("modelExtraConfigInput");
 const primaryModelSelect = document.getElementById("primaryModelSelect");
 const saveModelConfigBtn = document.getElementById("saveModelConfigBtn");
 const saveAndSwitchModelBtn = document.getElementById("saveAndSwitchModelBtn");
+const onboardModelBtn = document.getElementById("onboardModelBtn");
 const switchModelBtn = document.getElementById("switchModelBtn");
 const clearModelFormBtn = document.getElementById("clearModelFormBtn");
+const channelSummary = document.getElementById("channelSummary");
+const channelCount = document.getElementById("channelCount");
+const channelList = document.getElementById("channelList");
+const channelNameInput = document.getElementById("channelNameInput");
+const channelDefaultAccountInput = document.getElementById("channelDefaultAccountInput");
+const channelDmPolicySelect = document.getElementById("channelDmPolicySelect");
+const channelGroupPolicySelect = document.getElementById("channelGroupPolicySelect");
+const channelEnabledInput = document.getElementById("channelEnabledInput");
+const channelAllowFromInput = document.getElementById("channelAllowFromInput");
+const channelGroupAllowFromInput = document.getElementById("channelGroupAllowFromInput");
+const channelExtraConfigInput = document.getElementById("channelExtraConfigInput");
+const saveChannelConfigBtn = document.getElementById("saveChannelConfigBtn");
+const clearChannelFormBtn = document.getElementById("clearChannelFormBtn");
 const workspaceFileCount = document.getElementById("workspaceFileCount");
 const workspaceFileList = document.getElementById("workspaceFileList");
 const workspaceSkillCount = document.getElementById("workspaceSkillCount");
@@ -616,6 +630,161 @@ function getCurrentModelConfigByName(modelName) {
   return entries.find((item) => item.name === modelName)?.config || {};
 }
 
+function getChannelEntries(config) {
+  const channels = config?.channels || {};
+  if (!channels || typeof channels !== "object" || Array.isArray(channels)) {
+    return [];
+  }
+  return Object.entries(channels).map(([name, value]) => ({
+    name,
+    config: value && typeof value === "object" && !Array.isArray(value) ? value : {}
+  }));
+}
+
+function formatListTextarea(items) {
+  return Array.isArray(items) ? items.join("\n") : "";
+}
+
+function parseTextareaList(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function clearChannelForm() {
+  channelNameInput.value = "";
+  channelDefaultAccountInput.value = "";
+  channelDmPolicySelect.value = "";
+  channelGroupPolicySelect.value = "";
+  channelEnabledInput.checked = false;
+  channelAllowFromInput.value = "";
+  channelGroupAllowFromInput.value = "";
+  channelExtraConfigInput.value = "{}";
+}
+
+function fillChannelForm(name, channelConfig) {
+  const extraConfig = { ...(channelConfig || {}) };
+  delete extraConfig.enabled;
+  delete extraConfig.dmPolicy;
+  delete extraConfig.allowFrom;
+  delete extraConfig.groupPolicy;
+  delete extraConfig.groupAllowFrom;
+  delete extraConfig.defaultAccount;
+
+  channelNameInput.value = name || "";
+  channelDefaultAccountInput.value = channelConfig?.defaultAccount || "";
+  channelDmPolicySelect.value = channelConfig?.dmPolicy || "";
+  channelGroupPolicySelect.value = channelConfig?.groupPolicy || "";
+  channelEnabledInput.checked = Boolean(channelConfig?.enabled);
+  channelAllowFromInput.value = formatListTextarea(channelConfig?.allowFrom);
+  channelGroupAllowFromInput.value = formatListTextarea(channelConfig?.groupAllowFrom);
+  channelExtraConfigInput.value = `${JSON.stringify(extraConfig, null, 2)}\n`;
+}
+
+function buildChannelConfigFromForm() {
+  let extraConfig = {};
+  const extraRaw = String(channelExtraConfigInput.value || "{}").trim();
+  if (extraRaw) {
+    extraConfig = JSON.parse(extraRaw);
+    if (!extraConfig || typeof extraConfig !== "object" || Array.isArray(extraConfig)) {
+      throw new Error("其他配置 JSON 必须是对象");
+    }
+  }
+
+  const nextConfig = { ...extraConfig };
+  const defaultAccount = String(channelDefaultAccountInput.value || "").trim();
+  const dmPolicy = String(channelDmPolicySelect.value || "").trim();
+  const groupPolicy = String(channelGroupPolicySelect.value || "").trim();
+  const allowFrom = parseTextareaList(channelAllowFromInput.value);
+  const groupAllowFrom = parseTextareaList(channelGroupAllowFromInput.value);
+
+  nextConfig.enabled = channelEnabledInput.checked;
+  if (defaultAccount) {
+    nextConfig.defaultAccount = defaultAccount;
+  }
+  if (dmPolicy) {
+    nextConfig.dmPolicy = dmPolicy;
+  }
+  if (allowFrom.length) {
+    nextConfig.allowFrom = allowFrom;
+  }
+  if (groupPolicy) {
+    nextConfig.groupPolicy = groupPolicy;
+  }
+  if (groupAllowFrom.length) {
+    nextConfig.groupAllowFrom = groupAllowFrom;
+  }
+
+  return nextConfig;
+}
+
+function renderChannelConfig(config) {
+  const entries = getChannelEntries(config);
+  const enabledEntries = entries.filter((item) => item.config.enabled);
+  channelList.innerHTML = "";
+  channelCount.textContent = `${entries.length} 个`;
+  channelSummary.textContent = enabledEntries.length
+    ? `当前启用 ${enabledEntries.length} 个渠道：${enabledEntries.map((item) => item.name).join(", ")}`
+    : "当前没有启用的渠道配置";
+
+  if (!entries.length) {
+    channelList.innerHTML = "<p class='muted'>当前配置还没有渠道条目。</p>";
+    clearChannelForm();
+    return;
+  }
+
+  entries.forEach(({ name, config: channelConfig }) => {
+    const node = infoCardTpl.content.firstElementChild.cloneNode(true);
+    node.classList.add("model-card");
+    if (channelConfig.enabled) {
+      node.classList.add("active-model");
+    }
+    node.querySelector("[data-field='title']").textContent = channelConfig.enabled ? `${name} · 已启用` : name;
+    node.querySelector("[data-field='path']").textContent = channelConfig.defaultAccount
+      ? `defaultAccount=${channelConfig.defaultAccount}`
+      : "未设置默认账号";
+    node.querySelector("[data-field='desc']").textContent =
+      `DM ${channelConfig.dmPolicy || "未设置"}；Allow ${Array.isArray(channelConfig.allowFrom) ? channelConfig.allowFrom.length : 0} 项；Group ${channelConfig.groupPolicy || "未设置"}`;
+    node.addEventListener("click", () => fillChannelForm(name, channelConfig));
+    channelList.appendChild(node);
+  });
+
+  fillChannelForm(entries[0].name, entries[0].config);
+}
+
+function getCurrentChannelConfigByName(channelName) {
+  const entries = getChannelEntries(state.workspace?.config?.parsed);
+  return entries.find((item) => item.name === channelName)?.config || {};
+}
+
+async function updateChannelConfig() {
+  const payload = getCurrentWorkspacePayload();
+  if (!payload.configPath) {
+    appendLog("请先加载 OpenClaw 配置，再更新渠道配置");
+    return;
+  }
+
+  const channelName = String(channelNameInput.value || "").trim().toLowerCase();
+  if (!channelName) {
+    appendLog("请输入渠道名称");
+    return;
+  }
+
+  const result = await request("/api/openclaw/channel-config", {
+    method: "POST",
+    body: JSON.stringify({
+      ...payload,
+      channelName,
+      channelConfig: buildChannelConfigFromForm()
+    })
+  });
+
+  state.workspace = result.result.workspace;
+  renderWorkspace();
+  appendLog(`渠道 ${result.result.channelName} 已保存`);
+}
+
 async function updateModelConfig({ shouldSave, shouldSwitch }) {
   const payload = getCurrentWorkspacePayload();
   if (!payload.configPath) {
@@ -659,6 +828,84 @@ async function updateModelConfig({ shouldSave, shouldSwitch }) {
   );
 }
 
+async function onboardModelConfig() {
+  const payload = getCurrentWorkspacePayload();
+  if (!payload.configPath) {
+    appendLog("请先加载 OpenClaw 配置，再通过 onboard 初始化模型");
+    return;
+  }
+
+  const modelId = String(modelIdInput.value || "").trim();
+  if (!modelId) {
+    appendLog("请先填写 Model ID");
+    return;
+  }
+
+  const provider = String(modelProviderInput.value || "").trim();
+  const baseUrl = String(modelBaseUrlInput.value || "").trim();
+  const apiKey = String(modelApiKeyInput.value || "").trim();
+  const body = {
+    ...payload,
+    provider,
+    modelId,
+    baseUrl,
+    apiKey
+  };
+
+  startUpdateModal({
+    title: "OpenClaw onboard 初始化",
+    statusText: "准备执行 onboard...",
+    progress: 10,
+    logMessage: "开始通过 openclaw onboard 写入模型和认证配置"
+  });
+  onboardModelBtn.disabled = true;
+
+  try {
+    const response = await fetch("/api/openclaw/onboard-model", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || "onboard 初始化失败");
+    }
+
+    let completed = false;
+    await streamJsonLines(response, (event) => {
+      if (event.progress !== undefined) {
+        setUpdateModalStep(event.message || "正在执行 onboard...", event.progress);
+      }
+      if (event.message) {
+        appendUpdateModalLog(event.message);
+      }
+      if (event.type === "complete") {
+        completed = true;
+      }
+      if (event.type === "error") {
+        throw new Error(event.message || "onboard 初始化失败");
+      }
+    });
+
+    if (!completed) {
+      throw new Error("onboard 初始化未返回完成状态");
+    }
+
+    await loadWorkspace({
+      rootPath: payload.rootPath,
+      configPath: payload.configPath
+    });
+    finishUpdateModal("onboard 初始化完成", 100);
+    appendLog(`已通过 onboard 初始化模型: ${modelId}`);
+  } catch (error) {
+    finishUpdateModal(`onboard 初始化失败: ${error.message}`, 100);
+    appendLog(`onboard 初始化模型失败: ${error.message}`);
+  } finally {
+    onboardModelBtn.disabled = false;
+  }
+}
+
 function renderWorkspace() {
   const workspace = state.workspace;
   if (!workspace) {
@@ -673,7 +920,9 @@ function renderWorkspace() {
     updateStatusText.textContent = "尚未检查版本";
     configEditor.value = "";
     clearModelForm();
+    clearChannelForm();
     renderModelConfig(null);
+    renderChannelConfig(null);
     renderPluginList(null);
     renderInteractiveList(workspaceFileList, workspaceFileCount, [], "尚未读取到工作区关键文件。", (item) => item, () => {});
     renderManagedSkillList([]);
@@ -713,6 +962,7 @@ function renderWorkspace() {
   renderParsedObject(workspace.config.parsed);
   renderExplanation(workspace.config.parsed);
   renderModelConfig(workspace.config.parsed);
+  renderChannelConfig(workspace.config.parsed);
   renderPluginList(workspace.config.parsed);
 }
 
@@ -815,10 +1065,15 @@ async function launchOpenClaw() {
     state.workspace?.rootPath || inferRootPathFromConfigPath(configPathInput.value) || "";
   const result = await request("/api/openclaw/launch", {
     method: "POST",
-    body: JSON.stringify({ rootPath })
+    body: JSON.stringify({ rootPath, autoRepair: true })
   });
 
-  appendLog(`已启动 OpenClaw (${result.result.source})，工作目录: ${result.result.cwd}`);
+  const repaired = (result.result.repairSteps || [])
+    .map((step) => `${step.action}${step.ok ? "成功" : "已跳过"}`)
+    .join("；");
+  appendLog(
+    `已自动修复并启动 OpenClaw (${result.result.source})，工作目录: ${result.result.cwd}${repaired ? `；${repaired}` : ""}`
+  );
 }
 
 async function openOpenClawControl() {
@@ -1368,6 +1623,10 @@ saveAndSwitchModelBtn.addEventListener("click", async () => {
   }
 });
 
+onboardModelBtn.addEventListener("click", async () => {
+  await onboardModelConfig();
+});
+
 switchModelBtn.addEventListener("click", async () => {
   try {
     await updateModelConfig({ shouldSave: false, shouldSwitch: true });
@@ -1378,6 +1637,18 @@ switchModelBtn.addEventListener("click", async () => {
 
 clearModelFormBtn.addEventListener("click", () => {
   clearModelForm();
+});
+
+saveChannelConfigBtn.addEventListener("click", async () => {
+  try {
+    await updateChannelConfig();
+  } catch (error) {
+    appendLog(`保存渠道配置失败: ${error.message}`);
+  }
+});
+
+clearChannelFormBtn.addEventListener("click", () => {
+  clearChannelForm();
 });
 
 primaryModelSelect.addEventListener("change", () => {

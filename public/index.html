@@ -154,8 +154,79 @@
               <div class="actions">
                 <button id="saveModelConfigBtn" class="btn" type="button">保存模型</button>
                 <button id="saveAndSwitchModelBtn" class="btn btn-outline" type="button">保存并切换</button>
+                <button id="onboardModelBtn" class="btn btn-outline" type="button">onboard 初始化</button>
                 <button id="switchModelBtn" class="btn btn-outline" type="button">切换主模型</button>
                 <button id="clearModelFormBtn" class="btn btn-ghost" type="button">清空表单</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel channel-panel">
+        <div class="row-head">
+          <div>
+            <h2>渠道配置</h2>
+            <p id="channelSummary" class="meta">尚未加载渠道配置</p>
+          </div>
+          <span id="channelCount" class="muted">0 个</span>
+        </div>
+        <div class="model-layout">
+          <div class="stack">
+            <div id="channelList" class="parsed-view"></div>
+          </div>
+          <div class="model-editor">
+            <div class="form-grid">
+              <label>
+                渠道名称
+                <input id="channelNameInput" placeholder="例如 telegram / discord / slack" />
+              </label>
+              <label>
+                默认账号
+                <input id="channelDefaultAccountInput" placeholder="可选，例如 default" />
+              </label>
+              <label>
+                DM 策略
+                <select id="channelDmPolicySelect">
+                  <option value="">未设置</option>
+                  <option value="pairing">pairing</option>
+                  <option value="allowlist">allowlist</option>
+                  <option value="open">open</option>
+                  <option value="disabled">disabled</option>
+                </select>
+              </label>
+              <label>
+                群组策略
+                <select id="channelGroupPolicySelect">
+                  <option value="">未设置</option>
+                  <option value="mention">mention</option>
+                  <option value="allowlist">allowlist</option>
+                  <option value="open">open</option>
+                  <option value="disabled">disabled</option>
+                </select>
+              </label>
+              <label class="form-wide checkbox-label">
+                <input id="channelEnabledInput" type="checkbox" />
+                启用渠道
+              </label>
+              <label class="form-wide">
+                允许私聊来源（每行一个）
+                <textarea id="channelAllowFromInput" class="mini-editor compact-editor" spellcheck="false"></textarea>
+              </label>
+              <label class="form-wide">
+                允许群组来源（每行一个）
+                <textarea id="channelGroupAllowFromInput" class="mini-editor compact-editor" spellcheck="false"></textarea>
+              </label>
+            </div>
+            <label class="extra-config-label">
+              其他配置 JSON
+              <textarea id="channelExtraConfigInput" class="mini-editor" spellcheck="false">{}</textarea>
+            </label>
+            <div class="model-actions">
+              <span class="meta">保存后会写入 `channels.&lt;渠道名称&gt;`</span>
+              <div class="actions">
+                <button id="saveChannelConfigBtn" class="btn" type="button">保存渠道</button>
+                <button id="clearChannelFormBtn" class="btn btn-ghost" type="button">清空表单</button>
               </div>
             </div>
           </div>
